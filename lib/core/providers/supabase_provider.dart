@@ -1,3 +1,4 @@
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pulso/core/config/env.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -15,3 +16,5 @@ Future<void> initializeSupabase() async {
 }
 
 SupabaseClient get supabase => Supabase.instance.client;
+
+final supabaseClientProvider = Provider<SupabaseClient>((ref) => supabase);

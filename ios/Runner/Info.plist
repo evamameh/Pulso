@@ -66,5 +66,9 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Pulso needs photo access to set your avatar and attach images to posts.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Pulso can use the camera if you choose to take a new photo.</string>
 </dict>
 </plist>

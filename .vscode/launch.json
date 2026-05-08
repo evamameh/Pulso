@@ -1,0 +1,15 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Pulso (Chrome)",
+      "request": "launch",
+      "type": "dart",
+      "deviceId": "chrome",
+      "args": [
+        "--dart-define=SUPABASE_URL=https://njiurcwbgjucanfesorh.supabase.co",
+        "--dart-define=SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5qaXVyY3diZ2p1Y2FuZmVzb3JoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzgyMTA0OTQsImV4cCI6MjA5Mzc4NjQ5NH0.GkEJcojUc1H-6892P2b3Me51O-HdPZ_bud3jQ9o-fDk"
+      ]
+    }
+  ]
+}

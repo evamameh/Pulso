@@ -1,6 +1,7 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:pulso/features/profile/domain/profile.dart';
 import 'package:pulso/features/profile/providers/profile_providers.dart';
@@ -13,7 +14,20 @@ class ProfilePage extends ConsumerWidget {
     final async = ref.watch(currentProfileProvider);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Profile')),
+      appBar: AppBar(
+        leading: IconButton(
+          tooltip: 'Back',
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () {
+            if (context.canPop()) {
+              context.pop();
+            } else {
+              context.go('/feed');
+            }
+          },
+        ),
+        title: const Text('Profile'),
+      ),
       body: async.when(
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, st) => Center(child: Text(e.toString())),
@@ -154,9 +168,21 @@ class _ProfileBodyState extends ConsumerState<_ProfileBody> {
                         ),
                 ),
               ),
-              IconButton.filled(
-                onPressed: _saving ? null : _pickAvatar,
-                icon: const Icon(Icons.photo_camera_outlined),
+              Material(
+                color: Theme.of(context).colorScheme.primary,
+                shape: const CircleBorder(),
+                clipBehavior: Clip.antiAlias,
+                child: InkWell(
+                  onTap: _saving ? null : _pickAvatar,
+                  child: Padding(
+                    padding: const EdgeInsets.all(10),
+                    child: Icon(
+                      Icons.add_a_photo,
+                      size: 22,
+                      color: Theme.of(context).colorScheme.onPrimary,
+                    ),
+                  ),
+                ),
               ),
             ],
           ),

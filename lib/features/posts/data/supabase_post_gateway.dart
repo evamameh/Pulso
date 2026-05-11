@@ -41,18 +41,79 @@ class SupabasePostGateway implements PostGateway {
   }
 
   @override
-  Future<List<Post>> fetchPosts({int limit = 20}) async {
+  Future<List<Post>> fetchPosts({int limit = 20, String? currentUserId}) async {
+    // Fetch posts with likes count
     final rows = await _client
         .from('posts')
-        .select()
+        .select('''
+          *,
+          likes:likes(count)
+        ''')
         .order('created_at', ascending: false)
         .limit(limit);
+
     final list = List<Map<String, dynamic>>.from(rows as List<dynamic>);
-    return list.map(Post.fromMap).toList();
+
+    // If we have currentUserId, check which posts they've liked
+    Set<String> likedPostIds = {};
+    if (currentUserId != null) {
+      final likedPosts = await _client
+          .from('likes')
+          .select('post_id')
+          .eq('user_id', currentUserId);
+      likedPostIds = (likedPosts as List).map((e) => e['post_id'] as String).toSet();
+    }
+
+    return list.map((postData) {
+      final likesCount = (postData['likes'] as List?)?.length ?? 0;
+      final postId = postData['id'] as String;
+      final userLiked = likedPostIds.contains(postId);
+
+      return Post(
+        id: postId,
+        userId: postData['user_id'] as String,
+        imageUrl: postData['image_url'] as String,
+        caption: postData['caption'] as String?,
+        createdAt: DateTime.parse(postData['created_at'] as String),
+        likesCount: likesCount,
+        userLiked: userLiked,
+      );
+    }).toList();
   }
 
   @override
   Future<void> deletePost(String postId) async {
     await _client.from('posts').delete().eq('id', postId);
+  }
+
+  @override
+  Future<void> updateCaption({
+    required String postId,
+    required String caption,
+  }) async {
+    await _client.from('posts').update({'caption': caption}).eq('id', postId);
+  }
+
+  @override
+  Future<void> likePost({
+    required String postId,
+    required String userId,
+  }) async {
+    await _client.from('likes').insert({
+      'post_id': postId,
+      'user_id': userId,
+    });
+  }
+
+  @override
+  Future<void> unlikePost({
+    required String postId,
+    required String userId,
+  }) async {
+    await _client
+        .from('likes')
+        .delete()
+        .eq('post_id', postId)
+        .eq('user_id', userId);
   }
 }

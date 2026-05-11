@@ -5,6 +5,8 @@ class Post {
     required this.imageUrl,
     this.caption,
     required this.createdAt,
+    this.likesCount = 0,
+    this.userLiked = false,
   });
 
   final String id;
@@ -12,6 +14,8 @@ class Post {
   final String imageUrl;
   final String? caption;
   final DateTime createdAt;
+  final int likesCount;
+  final bool userLiked;
 
   factory Post.fromMap(Map<String, dynamic> map) {
     return Post(
@@ -20,6 +24,8 @@ class Post {
       imageUrl: map['image_url'] as String,
       caption: map['caption'] as String?,
       createdAt: DateTime.parse(map['created_at'] as String),
+      likesCount: map['likes_count'] as int? ?? 0,
+      userLiked: map['user_liked'] as bool? ?? false,
     );
   }
 }

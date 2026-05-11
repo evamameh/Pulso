@@ -20,3 +20,14 @@ final postRepositoryProvider = Provider<PostRepository>(
 final postFeedProvider = FutureProvider<List<Post>>(
   (ref) => ref.watch(postRepositoryProvider).fetchFeed(),
 );
+
+final likePostProvider = FutureProvider.family<void, String>((ref, postId) async {
+  await ref.read(postRepositoryProvider).likePost(postId);
+  ref.invalidate(postFeedProvider);
+});
+
+final unlikePostProvider =
+    FutureProvider.family<void, String>((ref, postId) async {
+  await ref.read(postRepositoryProvider).unlikePost(postId);
+  ref.invalidate(postFeedProvider);
+});

@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import 'package:pulso/features/posts/data/post_gateway.dart';
 import 'package:pulso/features/posts/domain/post.dart';
+import 'package:pulso/features/posts/domain/comment.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class SupabasePostGateway implements PostGateway {
@@ -115,5 +116,36 @@ class SupabasePostGateway implements PostGateway {
         .delete()
         .eq('post_id', postId)
         .eq('user_id', userId);
+  }
+
+  @override
+  Future<List<Comment>> fetchComments({required String postId}) async {
+    final rows = await _client
+        .from('comments')
+        .select('*, profiles(username)')
+        .eq('post_id', postId)
+        .order('created_at', ascending: true);
+
+    return (rows as List<dynamic>)
+        .map((commentData) => Comment.fromMap(commentData as Map<String, dynamic>))
+        .toList();
+  }
+
+  @override
+  Future<void> postComment({
+    required String postId,
+    required String userId,
+    required String body,
+  }) async {
+    await _client.from('comments').insert({
+      'post_id': postId,
+      'user_id': userId,
+      'body': body,
+    });
+  }
+
+  @override
+  Future<void> deleteComment(String commentId) async {
+    await _client.from('comments').delete().eq('id', commentId);
   }
 }

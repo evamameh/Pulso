@@ -1,7 +1,6 @@
 import 'package:pulso/features/posts/domain/post.dart';
 
 import 'package:pulso/features/posts/domain/comment.dart';
-import 'package:pulso/features/posts/domain/post.dart';
 
 /// Supabase-backed post + storage operations (mocked in unit tests).
 abstract class PostGateway {

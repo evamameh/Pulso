@@ -7,6 +7,7 @@ import 'package:pulso/features/auth/presentation/register_page.dart';
 import 'package:pulso/features/feed/presentation/feed_page.dart';
 import 'package:pulso/features/posts/presentation/create_post_page.dart';
 import 'package:pulso/features/profile/presentation/profile_page.dart';
+import 'package:pulso/features/profile/presentation/user_profile_page.dart';
 
 final appRouterProvider = Provider<GoRouter>((ref) {
   final client = ref.watch(supabaseClientProvider);
@@ -46,6 +47,13 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/profile',
         builder: (context, state) => const ProfilePage(),
+      ),
+      GoRoute(
+        path: '/users/:userId',
+        builder: (context, state) {
+          final id = state.pathParameters['userId']!;
+          return UserProfilePage(userId: id);
+        },
       ),
       GoRoute(
         path: '/compose',

@@ -21,6 +21,9 @@ class ProfileRepository {
     return _gateway.fetchProfile(uid);
   }
 
+  Future<Profile?> fetchProfileById(String userId) =>
+      _gateway.fetchProfile(userId);
+
   Future<void> saveProfile({
     required String username,
     required String bio,

@@ -37,32 +37,33 @@ class PostRepository {
     );
   }
 
-  Future<List<Post>> fetchFeed({int limit = 20}) {
-    final uid = _currentUserId();
-    return _gateway.fetchPosts(limit: limit, currentUserId: uid);
-  }
+  Future<List<Post>> fetchFeed({int limit = 20}) => _gateway.fetchPosts(
+        limit: limit,
+        currentUserId: _currentUserId(),
+      );
+
+  Future<List<Post>> fetchPostsByUser(String userId, {int limit = 60}) =>
+      _gateway.fetchPostsForUser(
+        userId: userId,
+        limit: limit,
+        currentUserId: _currentUserId(),
+      );
 
   Future<void> deletePost(String postId) => _gateway.deletePost(postId);
 
-  Future<void> updateCaption({
-    required String postId,
-    required String caption,
-  }) =>
-      _gateway.updateCaption(postId: postId, caption: caption);
-
-  Future<void> likePost(String postId) {
+  Future<void> likePost(String postId) async {
     final uid = _currentUserId();
     if (uid == null) {
       throw StateError('Cannot like a post without a signed-in user.');
     }
-    return _gateway.likePost(postId: postId, userId: uid);
+    await _gateway.likePost(postId: postId, userId: uid);
   }
 
-  Future<void> unlikePost(String postId) {
+  Future<void> unlikePost(String postId) async {
     final uid = _currentUserId();
     if (uid == null) {
       throw StateError('Cannot unlike a post without a signed-in user.');
     }
-    return _gateway.unlikePost(postId: postId, userId: uid);
+    await _gateway.unlikePost(postId: postId, userId: uid);
   }
 }

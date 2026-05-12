@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:pulso/features/profile/domain/profile.dart';
+import 'package:pulso/features/profile/presentation/profile_realtime_listener.dart';
 import 'package:pulso/features/profile/providers/profile_providers.dart';
 
 class ProfilePage extends ConsumerWidget {
@@ -37,9 +38,12 @@ class ProfilePage extends ConsumerWidget {
               child: Text('No profile found for this account.'),
             );
           }
-          return _ProfileBody(
-            profile: profile,
-            onSaved: () => ref.invalidate(currentProfileProvider),
+          return ProfileRealtimeListener(
+            profileUserId: profile.id,
+            child: _ProfileBody(
+              profile: profile,
+              onSaved: () => ref.invalidate(currentProfileProvider),
+            ),
           );
         },
       ),
@@ -188,8 +192,16 @@ class _ProfileBodyState extends ConsumerState<_ProfileBody> {
           ),
         ),
         const SizedBox(height: 16),
+        Text(
+          '${widget.profile.followerCount} '
+          '${widget.profile.followerCount == 1 ? 'follower' : 'followers'}',
+          textAlign: TextAlign.center,
+          style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+        ),
+        const SizedBox(height: 16),
         TextField(
-          controller: _usernameCtrl,
           decoration: const InputDecoration(
             labelText: 'Username',
             border: OutlineInputBorder(),

@@ -48,6 +48,7 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> {
                 : _captionCtrl.text.trim(),
           );
       ref.invalidate(postFeedProvider);
+      await ref.read(postFeedProvider.future);
       if (!mounted) return;
       context.pop(true);
     } catch (e) {

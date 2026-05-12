@@ -83,7 +83,9 @@ void main() {
   });
 
   test('fetchFeed delegates to gateway', () async {
-    when(() => gateway.fetchPosts(limit: 12)).thenAnswer(
+    when(
+      () => gateway.fetchPosts(limit: 12, currentUserId: 'user-1'),
+    ).thenAnswer(
       (_) async => [
         Post(
           id: 'p1',
@@ -99,7 +101,8 @@ void main() {
 
     expect(posts, hasLength(1));
     expect(posts.first.id, 'p1');
-    verify(() => gateway.fetchPosts(limit: 12)).called(1);
+    verify(() => gateway.fetchPosts(limit: 12, currentUserId: 'user-1'))
+        .called(1);
   });
 
   test('deletePost delegates to gateway', () async {
@@ -108,5 +111,50 @@ void main() {
     await repository.deletePost('post-9');
 
     verify(() => gateway.deletePost('post-9')).called(1);
+  });
+
+  test('likePost delegates to gateway', () async {
+    when(
+      () => gateway.likePost(
+        postId: any(named: 'postId'),
+        userId: any(named: 'userId'),
+      ),
+    ).thenAnswer((_) async {});
+
+    await repository.likePost('post-1');
+
+    verify(
+      () => gateway.likePost(postId: 'post-1', userId: 'user-1'),
+    ).called(1);
+  });
+
+  test('unlikePost delegates to gateway', () async {
+    when(
+      () => gateway.unlikePost(
+        postId: any(named: 'postId'),
+        userId: any(named: 'userId'),
+      ),
+    ).thenAnswer((_) async {});
+
+    await repository.unlikePost('post-1');
+
+    verify(
+      () => gateway.unlikePost(postId: 'post-1', userId: 'user-1'),
+    ).called(1);
+  });
+
+  test('likePost throws when not signed in', () async {
+    final repo = PostRepository(
+      gateway: gateway,
+      currentUserId: () => null,
+    );
+
+    expect(() => repo.likePost('p'), throwsStateError);
+    verifyNever(
+      () => gateway.likePost(
+        postId: any(named: 'postId'),
+        userId: any(named: 'userId'),
+      ),
+    );
   });
 }

@@ -20,3 +20,8 @@ final profileRepositoryProvider = Provider<ProfileRepository>(
 final currentProfileProvider = FutureProvider<Profile?>(
   (ref) => ref.watch(profileRepositoryProvider).fetchCurrentProfile(),
 );
+
+final profileByIdProvider = FutureProvider.family<Profile?, String>(
+  (ref, userId) =>
+      ref.watch(profileRepositoryProvider).fetchProfileById(userId),
+);

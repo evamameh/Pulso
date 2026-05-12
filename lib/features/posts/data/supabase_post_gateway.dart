@@ -1,8 +1,8 @@
 import 'dart:typed_data';
 
 import 'package:pulso/features/posts/data/post_gateway.dart';
-import 'package:pulso/features/posts/domain/post.dart';
 import 'package:pulso/features/posts/domain/comment.dart';
+import 'package:pulso/features/posts/domain/post.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class SupabasePostGateway implements PostGateway {
@@ -41,45 +41,86 @@ class SupabasePostGateway implements PostGateway {
     });
   }
 
+  // Single FK posts.user_id → profiles.id: unhinted `profiles(...)` is used
+  // intentionally because constraint-name hints differ between local and
+  // hosted DBs. PostgREST returns a single object for this one-to-one embed;
+  // `Post.fromMap` also accepts a one-element list for forward compatibility.
+  // RLS: `profiles_select` allows authenticated users to read every profile,
+  // so the join hydrates author info for every feed row regardless of poster.
+  static const _postSelect =
+      'id, user_id, image_url, caption, created_at, '
+      'profiles(username, avatar_url), '
+      'likes(count), '
+      'comments(count)';
+
+  Future<Set<String>> _likedPostIds({
+    required String viewerId,
+    required List<String> postIds,
+  }) async {
+    if (postIds.isEmpty) return {};
+    final rows = await _client
+        .from('likes')
+        .select('post_id')
+        .eq('user_id', viewerId)
+        .inFilter('post_id', postIds);
+    final list = List<Map<String, dynamic>>.from(rows as List<dynamic>);
+    return list.map((r) => '${r['post_id']}').toSet();
+  }
+
+  List<Post> _mergeLikedByMe(
+    List<Post> posts,
+    Set<String> likedIds,
+  ) {
+    if (likedIds.isEmpty) return posts;
+    return posts
+        .map((p) => p.copyWith(likedByMe: likedIds.contains(p.id)))
+        .toList();
+  }
+
   @override
-  Future<List<Post>> fetchPosts({int limit = 20, String? currentUserId}) async {
-    // Fetch posts with likes count
+  Future<List<Post>> fetchPosts({
+    int limit = 20,
+    String? currentUserId,
+  }) async {
     final rows = await _client
         .from('posts')
-        .select('''
-          *,
-          likes:likes(count)
-        ''')
+        .select(_postSelect)
         .order('created_at', ascending: false)
         .limit(limit);
-
     final list = List<Map<String, dynamic>>.from(rows as List<dynamic>);
-
-    // If we have currentUserId, check which posts they've liked
-    Set<String> likedPostIds = {};
-    if (currentUserId != null) {
-      final likedPosts = await _client
-          .from('likes')
-          .select('post_id')
-          .eq('user_id', currentUserId);
-      likedPostIds = (likedPosts as List).map((e) => e['post_id'] as String).toSet();
-    }
-
-    return list.map((postData) {
-      final likesCount = (postData['likes'] as List?)?.length ?? 0;
-      final postId = postData['id'] as String;
-      final userLiked = likedPostIds.contains(postId);
-
-      return Post(
-        id: postId,
-        userId: postData['user_id'] as String,
-        imageUrl: postData['image_url'] as String,
-        caption: postData['caption'] as String?,
-        createdAt: DateTime.parse(postData['created_at'] as String),
-        likesCount: likesCount,
-        userLiked: userLiked,
+    var posts = list.map(Post.fromMap).toList();
+    if (currentUserId != null && posts.isNotEmpty) {
+      final liked = await _likedPostIds(
+        viewerId: currentUserId,
+        postIds: posts.map((p) => p.id).toList(),
       );
-    }).toList();
+      posts = _mergeLikedByMe(posts, liked);
+    }
+    return posts;
+  }
+
+  @override
+  Future<List<Post>> fetchPostsForUser({
+    required String userId,
+    int limit = 60,
+    String? currentUserId,
+  }) async {
+    final rows = await _client
+        .from('posts')
+        .select(_postSelect)
+        .eq('user_id', userId)
+        .order('created_at', ascending: false)
+        .limit(limit);
+    final list = List<Map<String, dynamic>>.from(rows as List<dynamic>);
+    var posts = list.map(Post.fromMap).toList();
+    if (currentUserId != null && posts.isNotEmpty) {
+      final liked = await _likedPostIds(
+        viewerId: currentUserId,
+        postIds: posts.map((p) => p.id).toList(),
+      );
+      posts = _mergeLikedByMe(posts, liked);
+    }
+    return posts;
   }
 
   @override
@@ -114,21 +155,18 @@ class SupabasePostGateway implements PostGateway {
     await _client
         .from('likes')
         .delete()
-        .eq('post_id', postId)
-        .eq('user_id', userId);
+        .match({'post_id': postId, 'user_id': userId});
   }
 
   @override
   Future<List<Comment>> fetchComments({required String postId}) async {
     final rows = await _client
         .from('comments')
-        .select('*, profiles(username)')
+        .select('id, post_id, user_id, body, created_at, profiles(username)')
         .eq('post_id', postId)
         .order('created_at', ascending: true);
-
-    return (rows as List<dynamic>)
-        .map((commentData) => Comment.fromMap(commentData as Map<String, dynamic>))
-        .toList();
+    final list = List<Map<String, dynamic>>.from(rows as List<dynamic>);
+    return list.map(Comment.fromMap).toList();
   }
 
   @override

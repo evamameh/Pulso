@@ -3,12 +3,17 @@
 
 create extension if not exists "pgcrypto";
 
+-- profiles: id is the primary key (links auth.users and all FKs from posts,
+-- follows, likes, comments). follower_count is denormalized; maintained by
+-- triggers in schema_day6_profiles_follower_count.sql when migrating older DBs.
 create table if not exists public.profiles (
   id uuid primary key references auth.users(id) on delete cascade,
   username text unique not null,
   bio text,
   avatar_url text,
-  created_at timestamptz not null default now()
+  created_at timestamptz not null default now(),
+  follower_count integer not null default 0,
+  constraint profiles_follower_count_nonnegative check (follower_count >= 0)
 );
 
 create table if not exists public.posts (
@@ -108,3 +113,42 @@ with check (auth.uid() = follower_id);
 create policy "follows_delete_own" on public.follows
 for delete to authenticated
 using (auth.uid() = follower_id);
+
+-- follower_count on profiles: maintained from follows (no app writes needed).
+create or replace function public.increment_profile_follower_count()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  update public.profiles
+  set follower_count = follower_count + 1
+  where id = new.following_id;
+  return new;
+end;
+$$;
+
+create or replace function public.decrement_profile_follower_count()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  update public.profiles
+  set follower_count = greatest(0, follower_count - 1)
+  where id = old.following_id;
+  return old;
+end;
+$$;
+
+drop trigger if exists trg_follows_insert_follower_count on public.follows;
+create trigger trg_follows_insert_follower_count
+after insert on public.follows
+for each row execute procedure public.increment_profile_follower_count();
+
+drop trigger if exists trg_follows_delete_follower_count on public.follows;
+create trigger trg_follows_delete_follower_count
+after delete on public.follows
+for each row execute procedure public.decrement_profile_follower_count();

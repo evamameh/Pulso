@@ -2,10 +2,12 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:pulso/core/providers/supabase_provider.dart';
+import 'package:pulso/core/providers/current_user_provider.dart';
 import 'package:pulso/features/auth/providers/auth_providers.dart';
 import 'package:pulso/features/posts/domain/post.dart';
+import 'package:pulso/features/posts/presentation/post_comments_sheet.dart';
 import 'package:pulso/features/posts/providers/post_providers.dart';
+import 'package:pulso/features/posts/widgets/post_author_avatar.dart';
 
 class FeedPage extends ConsumerWidget {
   const FeedPage({super.key});
@@ -19,8 +21,15 @@ class FeedPage extends ConsumerWidget {
         title: const Text('Pulso Feed'),
         actions: [
           IconButton(
-            tooltip: 'Profile',
-            onPressed: () => context.push('/profile'),
+            tooltip: 'My profile & saved',
+            onPressed: () {
+              final id = ref.read(currentUserIdProvider);
+              if (id != null) {
+                context.push('/users/$id');
+              } else {
+                context.push('/profile');
+              }
+            },
             icon: const Icon(Icons.person_outline),
           ),
           IconButton(
@@ -48,133 +57,51 @@ class FeedPage extends ConsumerWidget {
             padding: const EdgeInsets.all(16),
             children: [Text(e.toString())],
           ),
-          data: (list) => list.isEmpty
-              ? ListView(
-                  physics: const AlwaysScrollableScrollPhysics(),
-                  padding: const EdgeInsets.all(16),
-                  children: const [
-                    Text(
-                      'No posts yet.',
-                      style: TextStyle(fontSize: 16),
-                      textAlign: TextAlign.center,
-                    ),
-                  ],
-                )
-              : ListView.builder(
-                  physics: const AlwaysScrollableScrollPhysics(),
-                  padding: const EdgeInsets.all(12),
-                  itemCount: list.length,
-                  itemBuilder: (context, index) =>
-                      _PostCard(post: list[index], ref: ref),
-                ),
+          data: (list) {
+            final savedIds = ref.watch(savedPostIdSetProvider).valueOrNull ?? {};
+            if (list.isEmpty) {
+              return ListView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                padding: const EdgeInsets.all(16),
+                children: const [
+                  Text(
+                    'No posts yet.',
+                    style: TextStyle(fontSize: 16),
+                    textAlign: TextAlign.center,
+                  ),
+                ],
+              );
+            }
+            return ListView.builder(
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: const EdgeInsets.all(12),
+              itemCount: list.length,
+              itemBuilder: (context, index) => _PostCard(
+                post: list[index],
+                ref: ref,
+                isSaved: savedIds.contains(list[index].id),
+              ),
+            );
+          },
         ),
       ),
     );
   }
 }
 
-/// Instagram-style circular author avatar shown left of the username in the
-/// feed post header. Uses [CachedNetworkImage] when [Post.authorAvatarUrl] is
-/// present; otherwise falls back to [Post.displayInitial] over a tinted
-/// circle. A 1px ring sits flush with the avatar edge for the polished look.
-class _PostAuthorAvatar extends StatelessWidget {
-  const _PostAuthorAvatar({required this.post, this.size = 38});
-
-  final Post post;
-  final double size;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    final initial = post.displayInitial;
-    final url = post.authorAvatarUrl?.trim();
-    final hasUrl = url != null && url.isNotEmpty;
-
-    final initialStyle = TextStyle(
-      color: scheme.onSurface,
-      fontWeight: FontWeight.w600,
-      fontSize: size * 0.42,
-    );
-
-    final fallback = ColoredBox(
-      color: scheme.surfaceContainerHighest,
-      child: Center(child: Text(initial, style: initialStyle)),
-    );
-
-    return Container(
-      width: size,
-      height: size,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        border: Border.all(color: scheme.outlineVariant, width: 1),
-      ),
-      child: ClipOval(
-        child: hasUrl
-            ? CachedNetworkImage(
-                imageUrl: url,
-                fit: BoxFit.cover,
-                fadeInDuration: const Duration(milliseconds: 120),
-                placeholder: (_, __) => fallback,
-                errorWidget: (_, __, ___) => fallback,
-              )
-            : fallback,
-      ),
-    );
-  }
-}
-
 class _PostCard extends StatelessWidget {
-  const _PostCard({required this.post, required this.ref});
+  const _PostCard({
+    required this.post,
+    required this.ref,
+    required this.isSaved,
+  });
 
   final Post post;
   final WidgetRef ref;
+  final bool isSaved;
 
   Future<void> _openComments(BuildContext context) async {
-    final client = ref.read(supabaseClientProvider);
-    List<Map<String, dynamic>> rows = [];
-    try {
-      final data = await client
-          .from('comments')
-          .select('id, body, created_at, profiles(username)')
-          .eq('post_id', post.id)
-          .order('created_at', ascending: true);
-      rows = List<Map<String, dynamic>>.from(data as List<dynamic>);
-    } catch (_) {
-      rows = [];
-    }
-    if (!context.mounted) return;
-    await showModalBottomSheet<void>(
-      context: context,
-      showDragHandle: true,
-      builder: (ctx) {
-        return SafeArea(
-          child: rows.isEmpty
-              ? const Center(
-                  child: Padding(
-                    padding: EdgeInsets.all(24),
-                    child: Text('No comments yet.'),
-                  ),
-                )
-              : ListView.separated(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  itemCount: rows.length,
-                  separatorBuilder: (_, __) => const Divider(height: 1),
-                  itemBuilder: (ctx, i) {
-                    final r = rows[i];
-                    final prof = r['profiles'];
-                    final name = prof is Map<String, dynamic>
-                        ? (prof['username'] as String? ?? 'user')
-                        : 'user';
-                    return ListTile(
-                      dense: true,
-                      title: Text(name, style: const TextStyle(fontWeight: FontWeight.w600)),
-                      subtitle: Text(r['body'] as String? ?? ''),
-                    );
-                  },
-                ),
-        );
-      },
-    );
+    await showPostCommentsSheet(context: context, postId: post.id);
   }
 
   @override
@@ -198,7 +125,7 @@ class _PostCard extends StatelessWidget {
                   child: GestureDetector(
                     behavior: HitTestBehavior.opaque,
                     onTap: () => context.push('/users/${post.userId}'),
-                    child: _PostAuthorAvatar(post: post),
+                    child: PostAuthorAvatar(post: post),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -267,7 +194,7 @@ class _PostCard extends StatelessWidget {
                     onTap: () => context.push('/users/${post.userId}'),
                     child: Padding(
                       padding: const EdgeInsets.only(top: 2),
-                      child: _PostAuthorAvatar(post: post, size: 32),
+                      child: PostAuthorAvatar(post: post, size: 32),
                     ),
                   ),
                 ),
@@ -325,9 +252,27 @@ class _PostCard extends StatelessWidget {
                 Text('${post.commentCount}', style: Theme.of(context).textTheme.bodyMedium),
                 const Spacer(),
                 IconButton(
-                  onPressed: () {},
-                  icon: const Icon(Icons.bookmark_border),
-                  tooltip: 'Save',
+                  onPressed: () async {
+                    try {
+                      final repo = ref.read(postRepositoryProvider);
+                      if (isSaved) {
+                        await repo.unsavePost(post.id);
+                      } else {
+                        await repo.savePost(post.id);
+                      }
+                      ref.invalidate(savedPostIdSetProvider);
+                      ref.invalidate(savedPostsProvider);
+                    } catch (e) {
+                      if (!context.mounted) return;
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Save failed: $e')),
+                      );
+                    }
+                  },
+                  icon: Icon(
+                    isSaved ? Icons.bookmark : Icons.bookmark_border,
+                  ),
+                  tooltip: isSaved ? 'Remove from saved' : 'Save',
                 ),
               ],
             ),

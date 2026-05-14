@@ -3,22 +3,43 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:pulso/core/providers/current_user_provider.dart';
+import 'package:pulso/features/posts/domain/post.dart';
 import 'package:pulso/features/posts/providers/post_providers.dart';
 import 'package:pulso/features/profile/presentation/profile_realtime_listener.dart';
 import 'package:pulso/features/profile/providers/follow_providers.dart';
 import 'package:pulso/features/profile/providers/profile_providers.dart';
 
-class UserProfilePage extends ConsumerWidget {
+class UserProfilePage extends ConsumerStatefulWidget {
   const UserProfilePage({super.key, required this.userId});
 
   final String userId;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<UserProfilePage> createState() => _UserProfilePageState();
+}
+
+class _UserProfilePageState extends ConsumerState<UserProfilePage> {
+  /// 0 = posts grid, 1 = saved (only for own profile).
+  int _tab = 0;
+
+  @override
+  void didUpdateWidget(covariant UserProfilePage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.userId != widget.userId) {
+      setState(() => _tab = 0);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final userId = widget.userId;
     final profileAsync = ref.watch(profileByIdProvider(userId));
-    final postsAsync = ref.watch(userPostsProvider(userId));
     final me = ref.watch(currentUserIdProvider);
     final isSelf = me == userId;
+
+    final postsAsync = !isSelf || _tab == 0
+        ? ref.watch(userPostsProvider(userId))
+        : ref.watch(savedPostsProvider);
 
     return Scaffold(
       appBar: AppBar(
@@ -45,119 +66,154 @@ class UserProfilePage extends ConsumerWidget {
           onRefresh: () async {
             ref.invalidate(profileByIdProvider(userId));
             ref.invalidate(userPostsProvider(userId));
+            if (isSelf) {
+              ref.invalidate(savedPostsProvider);
+            }
             if (!isSelf) {
               ref.invalidate(isFollowingUserProvider(userId));
             }
             await Future.wait([
               ref.read(profileByIdProvider(userId).future),
-              ref.read(userPostsProvider(userId).future),
+              if (!isSelf || _tab == 0)
+                ref.read(userPostsProvider(userId).future),
+              if (isSelf && _tab == 1) ref.read(savedPostsProvider.future),
               if (!isSelf) ref.read(isFollowingUserProvider(userId).future),
             ]);
           },
           child: CustomScrollView(
             physics: const AlwaysScrollableScrollPhysics(),
             slivers: [
-            SliverToBoxAdapter(
-              child: profileAsync.when(
-                loading: () => const Padding(
-                  padding: EdgeInsets.all(24),
-                  child: Center(child: CircularProgressIndicator()),
+              SliverToBoxAdapter(
+                child: profileAsync.when(
+                  loading: () => const Padding(
+                    padding: EdgeInsets.all(24),
+                    child: Center(child: CircularProgressIndicator()),
+                  ),
+                  error: (e, _) => Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Text(e.toString()),
+                  ),
+                  data: (profile) {
+                    if (profile == null) {
+                      return const Padding(
+                        padding: EdgeInsets.all(24),
+                        child: Center(child: Text('User not found.')),
+                      );
+                    }
+                    return Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          _ProfileHeader(
+                            profileId: userId,
+                            username: profile.username,
+                            bio: profile.bio,
+                            avatarUrl: profile.avatarUrl,
+                            followerCount: profile.followerCount,
+                            isSelf: isSelf,
+                          ),
+                          if (isSelf) ...[
+                            const SizedBox(height: 12),
+                            SegmentedButton<int>(
+                              segments: const [
+                                ButtonSegment<int>(
+                                  value: 0,
+                                  label: Text('Posts'),
+                                  icon: Icon(Icons.grid_on_outlined),
+                                ),
+                                ButtonSegment<int>(
+                                  value: 1,
+                                  label: Text('Saved'),
+                                  icon: Icon(Icons.bookmark_outline),
+                                ),
+                              ],
+                              selected: {_tab},
+                              onSelectionChanged: (s) {
+                                setState(() => _tab = s.first);
+                              },
+                            ),
+                          ],
+                        ],
+                      ),
+                    );
+                  },
                 ),
-                error: (e, _) => Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Text(e.toString()),
-                ),
-                data: (profile) {
-                  if (profile == null) {
-                    return const Padding(
-                      padding: EdgeInsets.all(24),
-                      child: Center(child: Text('User not found.')),
+              ),
+              postsAsync.when(
+                data: (posts) {
+                  if (posts.isEmpty) {
+                    final msg = !isSelf || _tab == 0
+                        ? 'No posts yet.'
+                        : 'No saved posts yet.';
+                    return SliverFillRemaining(
+                      hasScrollBody: false,
+                      child: Center(child: Text(msg)),
                     );
                   }
-                  return Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-                    child: _ProfileHeader(
-                      profileId: userId,
-                      username: profile.username,
-                      bio: profile.bio,
-                      avatarUrl: profile.avatarUrl,
-                      followerCount: profile.followerCount,
-                      isSelf: isSelf,
-                    ),
-                  );
+                  return _postGridSliver(context, posts);
                 },
-              ),
-            ),
-            postsAsync.when(
-              data: (posts) {
-                if (posts.isEmpty) {
-                  return const SliverFillRemaining(
-                    hasScrollBody: false,
-                    child: Center(child: Text('No posts yet.')),
-                  );
-                }
-                return SliverPadding(
-                  padding: const EdgeInsets.symmetric(horizontal: 2),
-                  sliver: SliverGrid(
-                    gridDelegate:
-                        const SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: 3,
-                      mainAxisSpacing: 2,
-                      crossAxisSpacing: 2,
-                    ),
-                    delegate: SliverChildBuilderDelegate(
-                      (context, index) {
-                        final p = posts[index];
-                        final tileBg = Theme.of(context)
-                            .colorScheme
-                            .surfaceContainerHighest;
-                        return ColoredBox(
-                          color: tileBg,
-                          child: CachedNetworkImage(
-                            imageUrl: p.imageUrl,
-                            fit: BoxFit.contain,
-                            alignment: Alignment.center,
-                            placeholder: (_, __) => ColoredBox(
-                              color: tileBg,
-                              child: const Center(
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                ),
-                              ),
-                            ),
-                            errorWidget: (_, __, ___) => ColoredBox(
-                              color: tileBg,
-                              child: Icon(
-                                Icons.broken_image,
-                                color: Theme.of(context)
-                                    .colorScheme
-                                    .onSurfaceVariant,
-                              ),
-                            ),
-                          ),
-                        );
-                      },
-                      childCount: posts.length,
-                    ),
+                loading: () => const SliverFillRemaining(
+                  child: Center(child: CircularProgressIndicator()),
+                ),
+                error: (e, _) => SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Text(e.toString()),
                   ),
-                );
-              },
-              loading: () => const SliverFillRemaining(
-                child: Center(child: CircularProgressIndicator()),
-              ),
-              error: (e, _) => SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Text(e.toString()),
                 ),
               ),
-            ),
-          ],
+            ],
           ),
         ),
       ),
     );
   }
+}
+
+Widget _postGridSliver(BuildContext context, List<Post> posts) {
+  return SliverPadding(
+    padding: const EdgeInsets.symmetric(horizontal: 2),
+    sliver: SliverGrid(
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 3,
+        mainAxisSpacing: 2,
+        crossAxisSpacing: 2,
+      ),
+      delegate: SliverChildBuilderDelegate(
+        (context, index) {
+          final p = posts[index];
+          final tileBg =
+              Theme.of(context).colorScheme.surfaceContainerHighest;
+          return Material(
+            color: tileBg,
+            child: InkWell(
+              onTap: () => context.push('/posts/${p.id}'),
+              child: CachedNetworkImage(
+                imageUrl: p.imageUrl,
+                fit: BoxFit.contain,
+                alignment: Alignment.center,
+                placeholder: (_, __) => ColoredBox(
+                  color: tileBg,
+                  child: const Center(
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                ),
+                errorWidget: (_, __, ___) => ColoredBox(
+                  color: tileBg,
+                  child: Icon(
+                    Icons.broken_image,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
+            ),
+          );
+        },
+        childCount: posts.length,
+      ),
+    ),
+  );
 }
 
 class _ProfileHeader extends ConsumerWidget {

@@ -124,6 +124,29 @@ class SupabasePostGateway implements PostGateway {
   }
 
   @override
+  Future<Post?> fetchPostById({
+    required String postId,
+    String? currentUserId,
+  }) async {
+    final row = await _client
+        .from('posts')
+        .select(_postSelect)
+        .eq('id', postId)
+        .maybeSingle();
+    if (row == null) return null;
+    final map = Map<String, dynamic>.from(row as Map);
+    var post = Post.fromMap(map);
+    if (currentUserId != null) {
+      final liked = await _likedPostIds(
+        viewerId: currentUserId,
+        postIds: [post.id],
+      );
+      post = _mergeLikedByMe([post], liked).first;
+    }
+    return post;
+  }
+
+  @override
   Future<void> deletePost(String postId) async {
     await _client.from('posts').delete().eq('id', postId);
   }
@@ -162,7 +185,7 @@ class SupabasePostGateway implements PostGateway {
   Future<List<Comment>> fetchComments({required String postId}) async {
     final rows = await _client
         .from('comments')
-        .select('id, post_id, user_id, body, created_at, profiles(username)')
+        .select('id, post_id, user_id, body, created_at, parent_id, profiles(username)')
         .eq('post_id', postId)
         .order('created_at', ascending: true);
     final list = List<Map<String, dynamic>>.from(rows as List<dynamic>);
@@ -174,16 +197,90 @@ class SupabasePostGateway implements PostGateway {
     required String postId,
     required String userId,
     required String body,
+    String? parentCommentId,
   }) async {
-    await _client.from('comments').insert({
+    final row = <String, dynamic>{
       'post_id': postId,
       'user_id': userId,
       'body': body,
-    });
+    };
+    if (parentCommentId != null) {
+      row['parent_id'] = parentCommentId;
+    }
+    await _client.from('comments').insert(row);
+  }
+
+  @override
+  Future<void> updateComment({
+    required String commentId,
+    required String body,
+  }) async {
+    await _client.from('comments').update({'body': body}).eq('id', commentId);
   }
 
   @override
   Future<void> deleteComment(String commentId) async {
     await _client.from('comments').delete().eq('id', commentId);
+  }
+
+  @override
+  Future<void> savePost({
+    required String userId,
+    required String postId,
+  }) async {
+    await _client.from('post_saves').insert({
+      'user_id': userId,
+      'post_id': postId,
+    });
+  }
+
+  @override
+  Future<void> unsavePost({
+    required String userId,
+    required String postId,
+  }) async {
+    await _client
+        .from('post_saves')
+        .delete()
+        .match({'user_id': userId, 'post_id': postId});
+  }
+
+  @override
+  Future<Set<String>> fetchSavedPostIds(String userId) async {
+    final rows = await _client
+        .from('post_saves')
+        .select('post_id')
+        .eq('user_id', userId);
+    final list = List<Map<String, dynamic>>.from(rows as List<dynamic>);
+    return list.map((r) => '${r['post_id']}').toSet();
+  }
+
+  @override
+  Future<List<Post>> fetchSavedPosts({
+    required String userId,
+    String? currentUserId,
+    int limit = 60,
+  }) async {
+    final rows = await _client
+        .from('post_saves')
+        .select('posts($_postSelect)')
+        .eq('user_id', userId)
+        .order('created_at', ascending: false)
+        .limit(limit);
+    final list = List<Map<String, dynamic>>.from(rows as List<dynamic>);
+    final posts = <Post>[];
+    for (final row in list) {
+      final p = row['posts'];
+      if (p is! Map<String, dynamic>) continue;
+      posts.add(Post.fromMap(p));
+    }
+    if (currentUserId != null && posts.isNotEmpty) {
+      final liked = await _likedPostIds(
+        viewerId: currentUserId,
+        postIds: posts.map((e) => e.id).toList(),
+      );
+      return _mergeLikedByMe(posts, liked);
+    }
+    return posts;
   }
 }

@@ -1,4 +1,5 @@
 import 'package:pulso/features/posts/data/post_gateway.dart';
+import 'package:pulso/features/posts/domain/comment.dart';
 import 'package:pulso/features/posts/domain/post.dart';
 import 'package:uuid/uuid.dart';
 
@@ -49,6 +50,11 @@ class PostRepository {
         currentUserId: _currentUserId(),
       );
 
+  Future<Post?> fetchPostById(String postId) => _gateway.fetchPostById(
+        postId: postId,
+        currentUserId: _currentUserId(),
+      );
+
   Future<void> deletePost(String postId) => _gateway.deletePost(postId);
 
   Future<void> likePost(String postId) async {
@@ -65,5 +71,85 @@ class PostRepository {
       throw StateError('Cannot unlike a post without a signed-in user.');
     }
     await _gateway.unlikePost(postId: postId, userId: uid);
+  }
+
+  Future<List<Comment>> fetchComments(String postId) =>
+      _gateway.fetchComments(postId: postId);
+
+  Future<void> addComment(
+    String postId,
+    String body, {
+    String? parentCommentId,
+  }) async {
+    final uid = _currentUserId();
+    if (uid == null) {
+      throw StateError('Cannot comment without a signed-in user.');
+    }
+    final trimmed = body.trim();
+    if (trimmed.isEmpty) return;
+    if (parentCommentId != null) {
+      final existing = await _gateway.fetchComments(postId: postId);
+      Comment? parent;
+      for (final c in existing) {
+        if (c.id == parentCommentId) {
+          parent = c;
+          break;
+        }
+      }
+      if (parent == null || parent.postId != postId) {
+        throw ArgumentError('That comment is not on this post.');
+      }
+    }
+    await _gateway.postComment(
+      postId: postId,
+      userId: uid,
+      body: trimmed,
+      parentCommentId: parentCommentId,
+    );
+  }
+
+  Future<void> updateComment(String commentId, String body) async {
+    final uid = _currentUserId();
+    if (uid == null) {
+      throw StateError('Cannot update a comment without a signed-in user.');
+    }
+    final trimmed = body.trim();
+    if (trimmed.isEmpty) return;
+    await _gateway.updateComment(commentId: commentId, body: trimmed);
+  }
+
+  Future<void> deleteComment(String commentId) =>
+      _gateway.deleteComment(commentId);
+
+  Future<void> savePost(String postId) async {
+    final uid = _currentUserId();
+    if (uid == null) {
+      throw StateError('Cannot save a post without a signed-in user.');
+    }
+    await _gateway.savePost(userId: uid, postId: postId);
+  }
+
+  Future<void> unsavePost(String postId) async {
+    final uid = _currentUserId();
+    if (uid == null) {
+      throw StateError('Cannot unsave a post without a signed-in user.');
+    }
+    await _gateway.unsavePost(userId: uid, postId: postId);
+  }
+
+  Future<Set<String>> fetchSavedPostIds() async {
+    final uid = _currentUserId();
+    if (uid == null) return {};
+    return _gateway.fetchSavedPostIds(uid);
+  }
+
+  Future<List<Post>> fetchSavedPosts({int limit = 60}) async {
+    final uid = _currentUserId();
+    if (uid == null) return [];
+    return _gateway.fetchSavedPosts(
+      userId: uid,
+      currentUserId: uid,
+      limit: limit,
+    );
   }
 }

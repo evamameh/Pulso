@@ -37,6 +37,7 @@ create table if not exists public.comments (
   post_id uuid not null references public.posts(id) on delete cascade,
   user_id uuid not null references public.profiles(id) on delete cascade,
   body text not null,
+  parent_id uuid references public.comments(id) on delete cascade,
   created_at timestamptz not null default now()
 );
 
@@ -90,6 +91,11 @@ for select to authenticated using (true);
 
 create policy "comments_insert" on public.comments
 for insert to authenticated
+with check (auth.uid() = user_id);
+
+create policy "comments_update_own" on public.comments
+for update to authenticated
+using (auth.uid() = user_id)
 with check (auth.uid() = user_id);
 
 create policy "comments_delete_owner_or_author" on public.comments

@@ -26,6 +26,11 @@ abstract class PostGateway {
     String? currentUserId,
   });
 
+  Future<Post?> fetchPostById({
+    required String postId,
+    String? currentUserId,
+  });
+
   Future<void> deletePost(String postId);
 
   Future<void> updateCaption({
@@ -49,7 +54,32 @@ abstract class PostGateway {
     required String postId,
     required String userId,
     required String body,
+    String? parentCommentId,
+  });
+
+  Future<void> updateComment({
+    required String commentId,
+    required String body,
   });
 
   Future<void> deleteComment(String commentId);
+
+  /// Bookmark: only visible to [userId] via RLS on `post_saves`.
+  Future<void> savePost({
+    required String userId,
+    required String postId,
+  });
+
+  Future<void> unsavePost({
+    required String userId,
+    required String postId,
+  });
+
+  Future<Set<String>> fetchSavedPostIds(String userId);
+
+  Future<List<Post>> fetchSavedPosts({
+    required String userId,
+    String? currentUserId,
+    int limit = 60,
+  });
 }

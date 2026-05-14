@@ -4,6 +4,7 @@ import 'package:pulso/core/providers/supabase_provider.dart';
 import 'package:pulso/features/posts/application/post_repository.dart';
 import 'package:pulso/features/posts/data/post_gateway.dart';
 import 'package:pulso/features/posts/data/supabase_post_gateway.dart';
+import 'package:pulso/features/posts/domain/comment.dart';
 import 'package:pulso/features/posts/domain/post.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -22,6 +23,31 @@ final userPostsProvider = FutureProvider.family<List<Post>, String>(
   (ref, userId) =>
       ref.watch(postRepositoryProvider).fetchPostsByUser(userId),
 );
+
+/// IDs of posts the signed-in user saved (private). Empty set when logged out.
+final savedPostIdSetProvider = FutureProvider<Set<String>>((ref) async {
+  ref.watch(currentUserIdProvider);
+  return ref.watch(postRepositoryProvider).fetchSavedPostIds();
+});
+
+/// Current user's saved posts (for profile "Saved" tab).
+final savedPostsProvider = FutureProvider<List<Post>>((ref) async {
+  ref.watch(currentUserIdProvider);
+  return ref.watch(postRepositoryProvider).fetchSavedPosts();
+});
+
+/// All comments for a post (newest at bottom — ordered in gateway ascending).
+final commentsForPostProvider =
+    FutureProvider.family<List<Comment>, String>((ref, postId) {
+  return ref.watch(postRepositoryProvider).fetchComments(postId);
+});
+
+/// Single post (e.g. opened from profile grid). Null if missing or RLS blocks.
+final postByIdProvider =
+    FutureProvider.family<Post?, String>((ref, postId) async {
+  ref.watch(currentUserIdProvider);
+  return ref.watch(postRepositoryProvider).fetchPostById(postId);
+});
 
 final postFeedProvider =
     AutoDisposeAsyncNotifierProvider<PostFeedNotifier, List<Post>>(

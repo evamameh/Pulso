@@ -43,6 +43,7 @@ class ProfilePage extends ConsumerWidget {
             child: _ProfileBody(
               profile: profile,
               onSaved: () => ref.invalidate(currentProfileProvider),
+              onViewPostsAndSaved: () => context.push('/users/${profile.id}'),
             ),
           );
         },
@@ -55,10 +56,12 @@ class _ProfileBody extends ConsumerStatefulWidget {
   const _ProfileBody({
     required this.profile,
     required this.onSaved,
+    required this.onViewPostsAndSaved,
   });
 
   final Profile profile;
   final VoidCallback onSaved;
+  final VoidCallback onViewPostsAndSaved;
 
   @override
   ConsumerState<_ProfileBody> createState() => _ProfileBodyState();
@@ -201,7 +204,14 @@ class _ProfileBodyState extends ConsumerState<_ProfileBody> {
               ),
         ),
         const SizedBox(height: 16),
+        OutlinedButton.icon(
+          onPressed: widget.onViewPostsAndSaved,
+          icon: const Icon(Icons.grid_on_outlined),
+          label: const Text('Posts & saved'),
+        ),
+        const SizedBox(height: 16),
         TextField(
+          controller: _usernameCtrl,
           decoration: const InputDecoration(
             labelText: 'Username',
             border: OutlineInputBorder(),

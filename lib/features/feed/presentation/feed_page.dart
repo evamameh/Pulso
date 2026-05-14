@@ -2,6 +2,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:pulso/core/providers/current_user_provider.dart';
 import 'package:pulso/core/providers/supabase_provider.dart';
 import 'package:pulso/features/auth/providers/auth_providers.dart';
 import 'package:pulso/features/posts/domain/comment.dart';
@@ -351,9 +352,23 @@ class _CommentsSheetState extends ConsumerState<_CommentsSheet> {
     }
   }
 
+  Future<void> _deleteComment(String commentId) async {
+    try {
+      await ref.read(postRepositoryProvider).deleteComment(commentId);
+      ref.invalidate(postCommentsProvider(widget.post.id));
+      ref.invalidate(postFeedProvider);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not delete comment: $e')),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final comments = ref.watch(postCommentsProvider(widget.post.id));
+    final currentUserId = ref.watch(currentUserIdProvider);
 
     return SafeArea(
       child: Column(
@@ -406,6 +421,9 @@ class _CommentsSheetState extends ConsumerState<_CommentsSheet> {
                       separatorBuilder: (_, __) => const Divider(height: 1),
                       itemBuilder: (ctx, i) {
                         final comment = list[i];
+                        final canDelete = currentUserId == comment.userId ||
+                            currentUserId == widget.post.userId;
+
                         return ListTile(
                           dense: true,
                           title: Text(
@@ -413,6 +431,14 @@ class _CommentsSheetState extends ConsumerState<_CommentsSheet> {
                             style: const TextStyle(fontWeight: FontWeight.w600),
                           ),
                           subtitle: Text(comment.body),
+                          trailing: canDelete
+                              ? IconButton(
+                                  icon: const Icon(Icons.delete_outline,
+                                      size: 20),
+                                  onPressed: () => _deleteComment(comment.id),
+                                  tooltip: 'Delete comment',
+                                )
+                              : null,
                         );
                       },
                     ),

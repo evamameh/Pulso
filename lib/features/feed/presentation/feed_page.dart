@@ -176,7 +176,10 @@ class _PostCard extends StatelessWidget {
                           alignment: Alignment.centerLeft,
                           child: Text(
                             post.displayUsername,
-                            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                            style: Theme.of(context)
+                                .textTheme
+                                .bodyMedium
+                                ?.copyWith(
                                   color: headerForeground,
                                   fontWeight: FontWeight.w600,
                                   letterSpacing: 0.1,
@@ -193,7 +196,8 @@ class _PostCard extends StatelessWidget {
                   onPressed: () {},
                   icon: const Icon(Icons.more_horiz),
                   tooltip: 'More',
-                  style: IconButton.styleFrom(foregroundColor: headerForeground),
+                  style:
+                      IconButton.styleFrom(foregroundColor: headerForeground),
                 ),
               ],
             ),
@@ -261,7 +265,9 @@ class _PostCard extends StatelessWidget {
                 IconButton(
                   onPressed: () async {
                     try {
-                      await ref.read(postFeedProvider.notifier).toggleLike(post);
+                      await ref
+                          .read(postFeedProvider.notifier)
+                          .toggleLike(post);
                     } catch (e) {
                       if (!context.mounted) return;
                       ScaffoldMessenger.of(context).showSnackBar(
@@ -278,13 +284,15 @@ class _PostCard extends StatelessWidget {
                         post.likedByMe ? scheme.error : scheme.onSurface,
                   ),
                 ),
-                Text('${post.likeCount}', style: Theme.of(context).textTheme.bodyMedium),
+                Text('${post.likeCount}',
+                    style: Theme.of(context).textTheme.bodyMedium),
                 IconButton(
                   onPressed: () => _openComments(context),
                   icon: const Icon(Icons.chat_bubble_outline),
                   tooltip: 'Comments',
                 ),
-                Text('${post.commentCount}', style: Theme.of(context).textTheme.bodyMedium),
+                Text('${post.commentCount}',
+                    style: Theme.of(context).textTheme.bodyMedium),
                 const Spacer(),
                 IconButton(
                   onPressed: () {},
@@ -327,9 +335,9 @@ class _CommentsSheetState extends ConsumerState<_CommentsSheet> {
 
     try {
       await ref.read(postRepositoryProvider).postComment(
-        postId: widget.post.id,
-        body: body,
-      );
+            postId: widget.post.id,
+            body: body,
+          );
       _commentController.clear();
       // Refresh comments
       ref.invalidate(postCommentsProvider(widget.post.id));
@@ -350,6 +358,31 @@ class _CommentsSheetState extends ConsumerState<_CommentsSheet> {
     return SafeArea(
       child: Column(
         children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8.0),
+            child: Row(
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.arrow_back),
+                  onPressed: () => Navigator.of(context).pop(),
+                  tooltip: 'Back',
+                ),
+                const Expanded(
+                  child: Text(
+                    'Comments',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w600,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+                const SizedBox(
+                    width: 48), // Balances the back button for centering
+              ],
+            ),
+          ),
+          const Divider(height: 1),
           Expanded(
             child: comments.when(
               loading: () => const Center(child: CircularProgressIndicator()),

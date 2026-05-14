@@ -24,6 +24,7 @@ final userPostsProvider = FutureProvider.family<List<Post>, String>(
       ref.watch(postRepositoryProvider).fetchPostsByUser(userId),
 );
 
+<<<<<<< HEAD
 /// IDs of posts the signed-in user saved (private). Empty set when logged out.
 final savedPostIdSetProvider = FutureProvider<Set<String>>((ref) async {
   ref.watch(currentUserIdProvider);
@@ -48,6 +49,11 @@ final postByIdProvider =
   ref.watch(currentUserIdProvider);
   return ref.watch(postRepositoryProvider).fetchPostById(postId);
 });
+=======
+final postCommentsProvider = FutureProvider.family<List<Comment>, String>(
+  (ref, postId) => ref.watch(postRepositoryProvider).fetchComments(postId),
+);
+>>>>>>> ff4f7255b6d33b887cf872c885026593f490edfe
 
 final postFeedProvider =
     AutoDisposeAsyncNotifierProvider<PostFeedNotifier, List<Post>>(
@@ -56,6 +62,7 @@ final postFeedProvider =
 
 class PostFeedNotifier extends AutoDisposeAsyncNotifier<List<Post>> {
   RealtimeChannel? _likesChannel;
+  RealtimeChannel? _commentsChannel;
 
   @override
   Future<List<Post>> build() async {
@@ -77,8 +84,20 @@ class PostFeedNotifier extends AutoDisposeAsyncNotifier<List<Post>> {
       );
     }
 
-    final channel = client.channel('pulso_feed_likes');
-    channel
+    void bumpCommentCount(String postId, int delta) {
+      final current = state.valueOrNull;
+      if (current == null) return;
+      state = AsyncData(
+        current.map((p) {
+          if (p.id != postId) return p;
+          final n = p.commentCount + delta;
+          return p.copyWith(commentCount: n < 0 ? 0 : n);
+        }).toList(),
+      );
+    }
+
+    final likesChannel = client.channel('pulso_feed_likes');
+    likesChannel
       ..onPostgresChanges(
         event: PostgresChangeEvent.insert,
         schema: 'public',
@@ -110,14 +129,49 @@ class PostFeedNotifier extends AutoDisposeAsyncNotifier<List<Post>> {
         },
       );
 
-    channel.subscribe();
-    _likesChannel = channel;
+    likesChannel.subscribe();
+    _likesChannel = likesChannel;
+
+    final commentsChannel = client.channel('pulso_feed_comments');
+    commentsChannel
+      ..onPostgresChanges(
+        event: PostgresChangeEvent.insert,
+        schema: 'public',
+        table: 'comments',
+        callback: (payload) {
+          final newRow = payload.newRecord;
+          if (newRow == null) return;
+          final postId = newRow['post_id'] as String?;
+          if (postId == null) return;
+          bumpCommentCount(postId, 1);
+        },
+      )
+      ..onPostgresChanges(
+        event: PostgresChangeEvent.delete,
+        schema: 'public',
+        table: 'comments',
+        callback: (payload) {
+          final oldRow = payload.oldRecord;
+          if (oldRow == null) return;
+          final postId = oldRow['post_id'] as String?;
+          if (postId == null) return;
+          bumpCommentCount(postId, -1);
+        },
+      );
+
+    commentsChannel.subscribe();
+    _commentsChannel = commentsChannel;
 
     ref.onDispose(() {
-      final ch = _likesChannel;
-      if (ch != null) {
-        client.removeChannel(ch);
+      final likesCh = _likesChannel;
+      if (likesCh != null) {
+        client.removeChannel(likesCh);
         _likesChannel = null;
+      }
+      final commentsCh = _commentsChannel;
+      if (commentsCh != null) {
+        client.removeChannel(commentsCh);
+        _commentsChannel = null;
       }
     });
 
@@ -158,6 +212,47 @@ class PostFeedNotifier extends AutoDisposeAsyncNotifier<List<Post>> {
       } else {
         await repo.likePost(post.id);
       }
+    } catch (_) {
+      state = AsyncData(current);
+      rethrow;
+    }
+  }
+
+  Future<void> deletePost(String postId) async {
+    final current = state.valueOrNull;
+    if (current == null) return;
+
+    // Optimistic: remove from list immediately
+    state = AsyncData(current.where((p) => p.id != postId).toList());
+
+    try {
+      await ref.read(postRepositoryProvider).deletePost(postId);
+    } catch (_) {
+      state = AsyncData(current);
+      rethrow;
+    }
+  }
+
+  Future<void> updateCaption({
+    required String postId,
+    required String caption,
+  }) async {
+    final current = state.valueOrNull;
+    if (current == null) return;
+
+    // Optimistic: update caption immediately
+    state = AsyncData(
+      current.map((p) {
+        if (p.id != postId) return p;
+        return p.copyWith(caption: caption);
+      }).toList(),
+    );
+
+    try {
+      await ref.read(postRepositoryProvider).updateCaption(
+            postId: postId,
+            caption: caption,
+          );
     } catch (_) {
       state = AsyncData(current);
       rethrow;

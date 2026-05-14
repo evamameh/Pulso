@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:pulso/core/providers/current_user_provider.dart';
-import 'package:pulso/core/providers/supabase_provider.dart';
 import 'package:pulso/features/auth/providers/auth_providers.dart';
 import 'package:pulso/features/posts/domain/comment.dart';
 import 'package:pulso/features/posts/domain/post.dart';
@@ -309,6 +308,52 @@ class _PostCard extends StatelessWidget {
   }
 }
 
+class _CommentAvatar extends StatelessWidget {
+  const _CommentAvatar({required this.comment, this.size = 32});
+
+  final Comment comment;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final initial = comment.displayInitial;
+    final url = comment.avatarUrl?.trim();
+    final hasUrl = url != null && url.isNotEmpty;
+
+    final initialStyle = TextStyle(
+      color: scheme.onSurface,
+      fontWeight: FontWeight.w600,
+      fontSize: size * 0.42,
+    );
+
+    final fallback = ColoredBox(
+      color: scheme.surfaceContainerHighest,
+      child: Center(child: Text(initial, style: initialStyle)),
+    );
+
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        border: Border.all(color: scheme.outlineVariant, width: 1),
+      ),
+      child: ClipOval(
+        child: hasUrl
+            ? CachedNetworkImage(
+                imageUrl: url,
+                fit: BoxFit.cover,
+                fadeInDuration: const Duration(milliseconds: 120),
+                placeholder: (_, __) => fallback,
+                errorWidget: (_, __, ___) => fallback,
+              )
+            : fallback,
+      ),
+    );
+  }
+}
+
 class _CommentsSheet extends ConsumerStatefulWidget {
   const _CommentsSheet({required this.post, required this.ref});
 
@@ -424,13 +469,49 @@ class _CommentsSheetState extends ConsumerState<_CommentsSheet> {
                         final canDelete = currentUserId == comment.userId ||
                             currentUserId == widget.post.userId;
 
+                        final diff =
+                            DateTime.now().difference(comment.createdAt);
+                        String timeAgo;
+                        if (diff.inDays > 7) {
+                          timeAgo =
+                              '${comment.createdAt.month}/${comment.createdAt.day}/${comment.createdAt.year}';
+                        } else if (diff.inDays > 0) {
+                          timeAgo = '${diff.inDays}d';
+                        } else if (diff.inHours > 0) {
+                          timeAgo = '${diff.inHours}h';
+                        } else if (diff.inMinutes > 0) {
+                          timeAgo = '${diff.inMinutes}m';
+                        } else {
+                          timeAgo = 'now';
+                        }
+
                         return ListTile(
-                          dense: true,
-                          title: Text(
-                            comment.username,
-                            style: const TextStyle(fontWeight: FontWeight.w600),
+                          contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 16, vertical: 4),
+                          leading: _CommentAvatar(comment: comment, size: 36),
+                          title: Row(
+                            children: [
+                              Text(
+                                comment.username,
+                                style: const TextStyle(
+                                    fontWeight: FontWeight.w600, fontSize: 14),
+                              ),
+                              const SizedBox(width: 8),
+                              Text(
+                                timeAgo,
+                                style: TextStyle(
+                                  color: Theme.of(context)
+                                      .colorScheme
+                                      .onSurfaceVariant,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ],
                           ),
-                          subtitle: Text(comment.body),
+                          subtitle: Padding(
+                            padding: const EdgeInsets.only(top: 4),
+                            child: Text(comment.body),
+                          ),
                           trailing: canDelete
                               ? IconButton(
                                   icon: const Icon(Icons.delete_outline,

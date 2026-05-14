@@ -47,8 +47,7 @@ class SupabasePostGateway implements PostGateway {
   // `Post.fromMap` also accepts a one-element list for forward compatibility.
   // RLS: `profiles_select` allows authenticated users to read every profile,
   // so the join hydrates author info for every feed row regardless of poster.
-  static const _postSelect =
-      'id, user_id, image_url, caption, created_at, '
+  static const _postSelect = 'id, user_id, image_url, caption, created_at, '
       'profiles(username, avatar_url), '
       'likes(count), '
       'comments(count)';
@@ -162,7 +161,8 @@ class SupabasePostGateway implements PostGateway {
   Future<List<Comment>> fetchComments({required String postId}) async {
     final rows = await _client
         .from('comments')
-        .select('id, post_id, user_id, body, created_at, profiles(username)')
+        .select(
+            'id, post_id, user_id, body, created_at, profiles(username, avatar_url)')
         .eq('post_id', postId)
         .order('created_at', ascending: true);
     final list = List<Map<String, dynamic>>.from(rows as List<dynamic>);

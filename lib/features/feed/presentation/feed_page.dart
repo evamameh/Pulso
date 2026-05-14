@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:pulso/core/providers/supabase_provider.dart';
 import 'package:pulso/features/auth/providers/auth_providers.dart';
+import 'package:pulso/features/posts/domain/comment.dart';
 import 'package:pulso/features/posts/domain/post.dart';
 import 'package:pulso/features/posts/providers/post_providers.dart';
 
@@ -130,50 +131,11 @@ class _PostCard extends StatelessWidget {
   final WidgetRef ref;
 
   Future<void> _openComments(BuildContext context) async {
-    final client = ref.read(supabaseClientProvider);
-    List<Map<String, dynamic>> rows = [];
-    try {
-      final data = await client
-          .from('comments')
-          .select('id, body, created_at, profiles(username)')
-          .eq('post_id', post.id)
-          .order('created_at', ascending: true);
-      rows = List<Map<String, dynamic>>.from(data as List<dynamic>);
-    } catch (_) {
-      rows = [];
-    }
-    if (!context.mounted) return;
     await showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
-      builder: (ctx) {
-        return SafeArea(
-          child: rows.isEmpty
-              ? const Center(
-                  child: Padding(
-                    padding: EdgeInsets.all(24),
-                    child: Text('No comments yet.'),
-                  ),
-                )
-              : ListView.separated(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  itemCount: rows.length,
-                  separatorBuilder: (_, __) => const Divider(height: 1),
-                  itemBuilder: (ctx, i) {
-                    final r = rows[i];
-                    final prof = r['profiles'];
-                    final name = prof is Map<String, dynamic>
-                        ? (prof['username'] as String? ?? 'user')
-                        : 'user';
-                    return ListTile(
-                      dense: true,
-                      title: Text(name, style: const TextStyle(fontWeight: FontWeight.w600)),
-                      subtitle: Text(r['body'] as String? ?? ''),
-                    );
-                  },
-                ),
-        );
-      },
+      isScrollControlled: true,
+      builder: (ctx) => _CommentsSheet(post: post, ref: ref),
     );
   }
 
@@ -328,6 +290,135 @@ class _PostCard extends StatelessWidget {
                   onPressed: () {},
                   icon: const Icon(Icons.bookmark_border),
                   tooltip: 'Save',
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CommentsSheet extends ConsumerStatefulWidget {
+  const _CommentsSheet({required this.post, required this.ref});
+
+  final Post post;
+  final WidgetRef ref;
+
+  @override
+  ConsumerState<_CommentsSheet> createState() => _CommentsSheetState();
+}
+
+class _CommentsSheetState extends ConsumerState<_CommentsSheet> {
+  final _commentController = TextEditingController();
+  final _scrollController = ScrollController();
+
+  @override
+  void dispose() {
+    _commentController.dispose();
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submitComment() async {
+    final body = _commentController.text.trim();
+    if (body.isEmpty) return;
+
+    try {
+      await ref.read(postRepositoryProvider).postComment(
+        postId: widget.post.id,
+        body: body,
+      );
+      _commentController.clear();
+      // Refresh comments
+      ref.invalidate(postCommentsProvider(widget.post.id));
+      // Refresh feed to update comment count
+      ref.invalidate(postFeedProvider);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not post comment: $e')),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final comments = ref.watch(postCommentsProvider(widget.post.id));
+
+    return SafeArea(
+      child: Column(
+        children: [
+          Expanded(
+            child: comments.when(
+              loading: () => const Center(child: CircularProgressIndicator()),
+              error: (e, _) => Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Text('Error loading comments: $e'),
+                ),
+              ),
+              data: (list) => list.isEmpty
+                  ? const Center(
+                      child: Padding(
+                        padding: EdgeInsets.all(24),
+                        child: Text('No comments yet.'),
+                      ),
+                    )
+                  : ListView.separated(
+                      controller: _scrollController,
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      itemCount: list.length,
+                      separatorBuilder: (_, __) => const Divider(height: 1),
+                      itemBuilder: (ctx, i) {
+                        final comment = list[i];
+                        return ListTile(
+                          dense: true,
+                          title: Text(
+                            comment.username,
+                            style: const TextStyle(fontWeight: FontWeight.w600),
+                          ),
+                          subtitle: Text(comment.body),
+                        );
+                      },
+                    ),
+            ),
+          ),
+          Container(
+            padding: EdgeInsets.only(
+              left: 16,
+              right: 16,
+              top: 8,
+              bottom: MediaQuery.of(context).viewInsets.bottom + 8,
+            ),
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.surface,
+              border: Border(
+                top: BorderSide(
+                  color: Theme.of(context).colorScheme.outlineVariant,
+                  width: 1,
+                ),
+              ),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _commentController,
+                    decoration: const InputDecoration(
+                      hintText: 'Add a comment...',
+                      border: InputBorder.none,
+                    ),
+                    maxLines: null,
+                    textInputAction: TextInputAction.send,
+                    onSubmitted: (_) => _submitComment(),
+                  ),
+                ),
+                IconButton(
+                  onPressed: _submitComment,
+                  icon: const Icon(Icons.send),
+                  tooltip: 'Post comment',
                 ),
               ],
             ),

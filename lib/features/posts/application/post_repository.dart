@@ -1,4 +1,5 @@
 import 'package:pulso/features/posts/data/post_gateway.dart';
+import 'package:pulso/features/posts/domain/comment.dart';
 import 'package:pulso/features/posts/domain/post.dart';
 import 'package:uuid/uuid.dart';
 
@@ -66,4 +67,25 @@ class PostRepository {
     }
     await _gateway.unlikePost(postId: postId, userId: uid);
   }
+
+  Future<List<Comment>> fetchComments(String postId) =>
+      _gateway.fetchComments(postId: postId);
+
+  Future<void> postComment({
+    required String postId,
+    required String body,
+  }) async {
+    final uid = _currentUserId();
+    if (uid == null) {
+      throw StateError('Cannot comment without a signed-in user.');
+    }
+    await _gateway.postComment(
+      postId: postId,
+      userId: uid,
+      body: body,
+    );
+  }
+
+  Future<void> deleteComment(String commentId) =>
+      _gateway.deleteComment(commentId);
 }

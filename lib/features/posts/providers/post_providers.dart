@@ -4,6 +4,7 @@ import 'package:pulso/core/providers/supabase_provider.dart';
 import 'package:pulso/features/posts/application/post_repository.dart';
 import 'package:pulso/features/posts/data/post_gateway.dart';
 import 'package:pulso/features/posts/data/supabase_post_gateway.dart';
+import 'package:pulso/features/posts/domain/comment.dart';
 import 'package:pulso/features/posts/domain/post.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -23,6 +24,10 @@ final userPostsProvider = FutureProvider.family<List<Post>, String>(
       ref.watch(postRepositoryProvider).fetchPostsByUser(userId),
 );
 
+final postCommentsProvider = FutureProvider.family<List<Comment>, String>(
+  (ref, postId) => ref.watch(postRepositoryProvider).fetchComments(postId),
+);
+
 final postFeedProvider =
     AutoDisposeAsyncNotifierProvider<PostFeedNotifier, List<Post>>(
   PostFeedNotifier.new,
@@ -30,6 +35,7 @@ final postFeedProvider =
 
 class PostFeedNotifier extends AutoDisposeAsyncNotifier<List<Post>> {
   RealtimeChannel? _likesChannel;
+  RealtimeChannel? _commentsChannel;
 
   @override
   Future<List<Post>> build() async {
@@ -51,8 +57,20 @@ class PostFeedNotifier extends AutoDisposeAsyncNotifier<List<Post>> {
       );
     }
 
-    final channel = client.channel('pulso_feed_likes');
-    channel
+    void bumpCommentCount(String postId, int delta) {
+      final current = state.valueOrNull;
+      if (current == null) return;
+      state = AsyncData(
+        current.map((p) {
+          if (p.id != postId) return p;
+          final n = p.commentCount + delta;
+          return p.copyWith(commentCount: n < 0 ? 0 : n);
+        }).toList(),
+      );
+    }
+
+    final likesChannel = client.channel('pulso_feed_likes');
+    likesChannel
       ..onPostgresChanges(
         event: PostgresChangeEvent.insert,
         schema: 'public',
@@ -84,14 +102,49 @@ class PostFeedNotifier extends AutoDisposeAsyncNotifier<List<Post>> {
         },
       );
 
-    channel.subscribe();
-    _likesChannel = channel;
+    likesChannel.subscribe();
+    _likesChannel = likesChannel;
+
+    final commentsChannel = client.channel('pulso_feed_comments');
+    commentsChannel
+      ..onPostgresChanges(
+        event: PostgresChangeEvent.insert,
+        schema: 'public',
+        table: 'comments',
+        callback: (payload) {
+          final newRow = payload.newRecord;
+          if (newRow == null) return;
+          final postId = newRow['post_id'] as String?;
+          if (postId == null) return;
+          bumpCommentCount(postId, 1);
+        },
+      )
+      ..onPostgresChanges(
+        event: PostgresChangeEvent.delete,
+        schema: 'public',
+        table: 'comments',
+        callback: (payload) {
+          final oldRow = payload.oldRecord;
+          if (oldRow == null) return;
+          final postId = oldRow['post_id'] as String?;
+          if (postId == null) return;
+          bumpCommentCount(postId, -1);
+        },
+      );
+
+    commentsChannel.subscribe();
+    _commentsChannel = commentsChannel;
 
     ref.onDispose(() {
-      final ch = _likesChannel;
-      if (ch != null) {
-        client.removeChannel(ch);
+      final likesCh = _likesChannel;
+      if (likesCh != null) {
+        client.removeChannel(likesCh);
         _likesChannel = null;
+      }
+      final commentsCh = _commentsChannel;
+      if (commentsCh != null) {
+        client.removeChannel(commentsCh);
+        _commentsChannel = null;
       }
     });
 

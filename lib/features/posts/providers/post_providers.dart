@@ -190,4 +190,45 @@ class PostFeedNotifier extends AutoDisposeAsyncNotifier<List<Post>> {
       rethrow;
     }
   }
+
+  Future<void> deletePost(String postId) async {
+    final current = state.valueOrNull;
+    if (current == null) return;
+
+    // Optimistic: remove from list immediately
+    state = AsyncData(current.where((p) => p.id != postId).toList());
+
+    try {
+      await ref.read(postRepositoryProvider).deletePost(postId);
+    } catch (_) {
+      state = AsyncData(current);
+      rethrow;
+    }
+  }
+
+  Future<void> updateCaption({
+    required String postId,
+    required String caption,
+  }) async {
+    final current = state.valueOrNull;
+    if (current == null) return;
+
+    // Optimistic: update caption immediately
+    state = AsyncData(
+      current.map((p) {
+        if (p.id != postId) return p;
+        return p.copyWith(caption: caption);
+      }).toList(),
+    );
+
+    try {
+      await ref.read(postRepositoryProvider).updateCaption(
+            postId: postId,
+            caption: caption,
+          );
+    } catch (_) {
+      state = AsyncData(current);
+      rethrow;
+    }
+  }
 }

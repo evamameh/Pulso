@@ -139,11 +139,96 @@ class _PostCard extends StatelessWidget {
     );
   }
 
+  Future<void> _editCaption(BuildContext context) async {
+    final controller = TextEditingController(text: post.caption ?? '');
+    final newCaption = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Edit Caption'),
+        content: TextField(
+          controller: controller,
+          decoration: const InputDecoration(
+            hintText: 'Write a caption...',
+            border: OutlineInputBorder(),
+          ),
+          maxLines: 4,
+          autofocus: true,
+          textCapitalization: TextCapitalization.sentences,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(controller.text.trim()),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+
+    if (newCaption == null) return; // dialog dismissed
+    if (newCaption == (post.caption ?? '')) return; // no change
+
+    try {
+      await ref.read(postFeedProvider.notifier).updateCaption(
+            postId: post.id,
+            caption: newCaption,
+          );
+    } catch (e) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not update caption: $e')),
+      );
+    }
+  }
+
+  Future<void> _deletePost(BuildContext context) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete Post'),
+        content: const Text(
+          'Are you sure you want to delete this post? This action cannot be undone.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(ctx).colorScheme.error,
+            ),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    try {
+      await ref.read(postFeedProvider.notifier).deletePost(post.id);
+    } catch (e) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not delete post: $e')),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final headerForeground = scheme.onSurface;
     final caption = post.caption;
+    final currentUserId = ref.watch(currentUserIdProvider);
+    final isOwner = currentUserId != null && currentUserId == post.userId;
+
     return Card(
       clipBehavior: Clip.antiAlias,
       margin: const EdgeInsets.only(bottom: 12),
@@ -192,13 +277,51 @@ class _PostCard extends StatelessWidget {
                     ),
                   ),
                 ),
-                IconButton(
-                  onPressed: () {},
-                  icon: const Icon(Icons.more_horiz),
-                  tooltip: 'More',
-                  style:
-                      IconButton.styleFrom(foregroundColor: headerForeground),
-                ),
+                if (isOwner)
+                  PopupMenuButton<String>(
+                    icon: Icon(Icons.more_horiz, color: headerForeground),
+                    tooltip: 'More',
+                    onSelected: (value) {
+                      switch (value) {
+                        case 'edit':
+                          _editCaption(context);
+                          break;
+                        case 'delete':
+                          _deletePost(context);
+                          break;
+                      }
+                    },
+                    itemBuilder: (ctx) => [
+                      const PopupMenuItem(
+                        value: 'edit',
+                        child: ListTile(
+                          leading: Icon(Icons.edit_outlined),
+                          title: Text('Edit Caption'),
+                          contentPadding: EdgeInsets.zero,
+                          visualDensity: VisualDensity.compact,
+                        ),
+                      ),
+                      PopupMenuItem(
+                        value: 'delete',
+                        child: ListTile(
+                          leading: Icon(Icons.delete_outline,
+                              color: scheme.error),
+                          title: Text('Delete Post',
+                              style: TextStyle(color: scheme.error)),
+                          contentPadding: EdgeInsets.zero,
+                          visualDensity: VisualDensity.compact,
+                        ),
+                      ),
+                    ],
+                  )
+                else
+                  IconButton(
+                    onPressed: () {},
+                    icon: const Icon(Icons.more_horiz),
+                    tooltip: 'More',
+                    style:
+                        IconButton.styleFrom(foregroundColor: headerForeground),
+                  ),
               ],
             ),
           ),
@@ -308,6 +431,7 @@ class _PostCard extends StatelessWidget {
   }
 }
 
+
 class _CommentAvatar extends StatelessWidget {
   const _CommentAvatar({required this.comment, this.size = 32});
 
@@ -410,10 +534,28 @@ class _CommentsSheetState extends ConsumerState<_CommentsSheet> {
     }
   }
 
+  Future<void> _toggleCommentLike(Comment comment) async {
+    try {
+      final repo = ref.read(postRepositoryProvider);
+      if (comment.likedByMe) {
+        await repo.unlikeComment(comment.id);
+      } else {
+        await repo.likeComment(comment.id);
+      }
+      ref.invalidate(postCommentsProvider(widget.post.id));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not update comment like: $e')),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final comments = ref.watch(postCommentsProvider(widget.post.id));
     final currentUserId = ref.watch(currentUserIdProvider);
+    final scheme = Theme.of(context).colorScheme;
 
     return SafeArea(
       child: Column(
@@ -485,41 +627,100 @@ class _CommentsSheetState extends ConsumerState<_CommentsSheet> {
                           timeAgo = 'now';
                         }
 
-                        return ListTile(
-                          contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 16, vertical: 4),
-                          leading: _CommentAvatar(comment: comment, size: 36),
-                          title: Row(
+                        return Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 8),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text(
-                                comment.username,
-                                style: const TextStyle(
-                                    fontWeight: FontWeight.w600, fontSize: 14),
-                              ),
-                              const SizedBox(width: 8),
-                              Text(
-                                timeAgo,
-                                style: TextStyle(
-                                  color: Theme.of(context)
-                                      .colorScheme
-                                      .onSurfaceVariant,
-                                  fontSize: 12,
+                              _CommentAvatar(comment: comment, size: 36),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        Text(
+                                          comment.username,
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.w600,
+                                            fontSize: 14,
+                                          ),
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Text(
+                                          timeAgo,
+                                          style: TextStyle(
+                                            color: scheme.onSurfaceVariant,
+                                            fontSize: 12,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      comment.body,
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .bodyMedium,
+                                    ),
+                                    const SizedBox(height: 4),
+                                    // Like button row
+                                    Row(
+                                      children: [
+                                        SizedBox(
+                                          height: 32,
+                                          width: 32,
+                                          child: IconButton(
+                                            padding: EdgeInsets.zero,
+                                            iconSize: 18,
+                                            onPressed: () =>
+                                                _toggleCommentLike(comment),
+                                            icon: Icon(
+                                              comment.likedByMe
+                                                  ? Icons.favorite
+                                                  : Icons.favorite_border,
+                                            ),
+                                            tooltip: comment.likedByMe
+                                                ? 'Unlike'
+                                                : 'Like',
+                                            style: IconButton.styleFrom(
+                                              foregroundColor:
+                                                  comment.likedByMe
+                                                      ? scheme.error
+                                                      : scheme.onSurfaceVariant,
+                                            ),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 2),
+                                        Text(
+                                          '${comment.likeCount}',
+                                          style: TextStyle(
+                                            color: scheme.onSurfaceVariant,
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.w500,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
                                 ),
                               ),
+                              if (canDelete)
+                                SizedBox(
+                                  width: 36,
+                                  height: 36,
+                                  child: IconButton(
+                                    padding: EdgeInsets.zero,
+                                    icon: const Icon(Icons.delete_outline,
+                                        size: 20),
+                                    onPressed: () =>
+                                        _deleteComment(comment.id),
+                                    tooltip: 'Delete comment',
+                                  ),
+                                ),
                             ],
                           ),
-                          subtitle: Padding(
-                            padding: const EdgeInsets.only(top: 4),
-                            child: Text(comment.body),
-                          ),
-                          trailing: canDelete
-                              ? IconButton(
-                                  icon: const Icon(Icons.delete_outline,
-                                      size: 20),
-                                  onPressed: () => _deleteComment(comment.id),
-                                  tooltip: 'Delete comment',
-                                )
-                              : null,
                         );
                       },
                     ),
@@ -568,3 +769,4 @@ class _CommentsSheetState extends ConsumerState<_CommentsSheet> {
     );
   }
 }
+

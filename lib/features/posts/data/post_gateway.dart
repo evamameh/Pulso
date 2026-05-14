@@ -52,4 +52,20 @@ abstract class PostGateway {
   });
 
   Future<void> deleteComment(String commentId);
+
+  Future<void> likeComment({
+    required String commentId,
+    required String userId,
+  });
+
+  Future<void> unlikeComment({
+    required String commentId,
+    required String userId,
+  });
+
+  /// Returns the set of comment IDs that [viewerId] has liked from [commentIds].
+  Future<Set<String>> fetchLikedCommentIds({
+    required String viewerId,
+    required List<String> commentIds,
+  });
 }

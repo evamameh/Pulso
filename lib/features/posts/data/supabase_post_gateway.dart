@@ -162,7 +162,7 @@ class SupabasePostGateway implements PostGateway {
     final rows = await _client
         .from('comments')
         .select(
-            'id, post_id, user_id, body, created_at, profiles(username, avatar_url)')
+            'id, post_id, user_id, body, created_at, profiles(username, avatar_url), comment_likes(count)')
         .eq('post_id', postId)
         .order('created_at', ascending: true);
     final list = List<Map<String, dynamic>>.from(rows as List<dynamic>);
@@ -185,5 +185,42 @@ class SupabasePostGateway implements PostGateway {
   @override
   Future<void> deleteComment(String commentId) async {
     await _client.from('comments').delete().eq('id', commentId);
+  }
+
+  @override
+  Future<void> likeComment({
+    required String commentId,
+    required String userId,
+  }) async {
+    await _client.from('comment_likes').insert({
+      'comment_id': commentId,
+      'user_id': userId,
+    });
+  }
+
+  @override
+  Future<void> unlikeComment({
+    required String commentId,
+    required String userId,
+  }) async {
+    await _client
+        .from('comment_likes')
+        .delete()
+        .match({'comment_id': commentId, 'user_id': userId});
+  }
+
+  @override
+  Future<Set<String>> fetchLikedCommentIds({
+    required String viewerId,
+    required List<String> commentIds,
+  }) async {
+    if (commentIds.isEmpty) return {};
+    final rows = await _client
+        .from('comment_likes')
+        .select('comment_id')
+        .eq('user_id', viewerId)
+        .inFilter('comment_id', commentIds);
+    final list = List<Map<String, dynamic>>.from(rows as List<dynamic>);
+    return list.map((r) => '${r['comment_id']}').toSet();
   }
 }

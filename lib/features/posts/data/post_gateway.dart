@@ -64,7 +64,22 @@ abstract class PostGateway {
 
   Future<void> deleteComment(String commentId);
 
-<<<<<<< HEAD
+  Future<void> likeComment({
+    required String commentId,
+    required String userId,
+  });
+
+  Future<void> unlikeComment({
+    required String commentId,
+    required String userId,
+  });
+
+  /// Returns comment IDs in [commentIds] that [viewerId] has liked.
+  Future<Set<String>> fetchLikedCommentIds({
+    required String viewerId,
+    required List<String> commentIds,
+  });
+
   /// Bookmark: only visible to [userId] via RLS on `post_saves`.
   Future<void> savePost({
     required String userId,
@@ -82,21 +97,5 @@ abstract class PostGateway {
     required String userId,
     String? currentUserId,
     int limit = 60,
-=======
-  Future<void> likeComment({
-    required String commentId,
-    required String userId,
-  });
-
-  Future<void> unlikeComment({
-    required String commentId,
-    required String userId,
-  });
-
-  /// Returns the set of comment IDs that [viewerId] has liked from [commentIds].
-  Future<Set<String>> fetchLikedCommentIds({
-    required String viewerId,
-    required List<String> commentIds,
->>>>>>> ff4f7255b6d33b887cf872c885026593f490edfe
   });
 }

@@ -79,15 +79,6 @@ class PostRepository {
     await _gateway.unlikePost(postId: postId, userId: uid);
   }
 
-<<<<<<< HEAD
-  Future<List<Comment>> fetchComments(String postId) =>
-      _gateway.fetchComments(postId: postId);
-
-  Future<void> addComment(
-    String postId,
-    String body, {
-    String? parentCommentId,
-=======
   Future<List<Comment>> fetchComments(String postId) async {
     final comments = await _gateway.fetchComments(postId: postId);
     final uid = _currentUserId();
@@ -121,16 +112,15 @@ class PostRepository {
     await _gateway.unlikeComment(commentId: commentId, userId: uid);
   }
 
-  Future<void> postComment({
-    required String postId,
-    required String body,
->>>>>>> ff4f7255b6d33b887cf872c885026593f490edfe
+  Future<void> addComment(
+    String postId,
+    String body, {
+    String? parentCommentId,
   }) async {
     final uid = _currentUserId();
     if (uid == null) {
       throw StateError('Cannot comment without a signed-in user.');
     }
-<<<<<<< HEAD
     final trimmed = body.trim();
     if (trimmed.isEmpty) return;
     if (parentCommentId != null) {
@@ -198,16 +188,4 @@ class PostRepository {
       limit: limit,
     );
   }
-=======
-    await _gateway.postComment(
-      postId: postId,
-      userId: uid,
-      body: body,
-    );
-  }
-
-  Future<void> deleteComment(String commentId) =>
-      _gateway.deleteComment(commentId);
->>>>>>> ff4f7255b6d33b887cf872c885026593f490edfe
 }
-

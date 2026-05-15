@@ -184,7 +184,11 @@ class PostDetailPage extends ConsumerWidget {
                           style: Theme.of(context).textTheme.bodyMedium),
                       IconButton(
                         onPressed: () =>
-                            showPostCommentsSheet(context: context, postId: post.id),
+                            showPostCommentsSheet(
+                              context: context,
+                              postId: post.id,
+                              postAuthorUserId: post.userId,
+                            ),
                         icon: const Icon(Icons.chat_bubble_outline),
                         tooltip: 'Comments',
                       ),

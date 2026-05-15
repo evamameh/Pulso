@@ -1,25 +1,49 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:pulso/core/providers/current_user_provider.dart';
+import 'package:pulso/core/providers/supabase_provider.dart';
 import 'package:pulso/features/posts/domain/comment.dart';
 import 'package:pulso/features/posts/providers/post_providers.dart';
+import 'package:pulso/features/posts/widgets/comment_author_avatar.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 Future<void> showPostCommentsSheet({
   required BuildContext context,
   required String postId,
+  String? postAuthorUserId,
 }) async {
   await showModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
     showDragHandle: true,
-    builder: (ctx) => PostCommentsSheet(postId: postId),
+    builder: (ctx) => PostCommentsSheet(
+      postId: postId,
+      postAuthorUserId: postAuthorUserId,
+    ),
   );
 }
 
+String _formatCommentTime(DateTime createdAt) {
+  final diff = DateTime.now().difference(createdAt);
+  if (diff.inDays > 7) {
+    return '${createdAt.month}/${createdAt.day}/${createdAt.year}';
+  }
+  if (diff.inDays > 0) return '${diff.inDays}d';
+  if (diff.inHours > 0) return '${diff.inHours}h';
+  if (diff.inMinutes > 0) return '${diff.inMinutes}m';
+  return 'now';
+}
+
 class PostCommentsSheet extends ConsumerStatefulWidget {
-  const PostCommentsSheet({super.key, required this.postId});
+  const PostCommentsSheet({
+    super.key,
+    required this.postId,
+    this.postAuthorUserId,
+  });
 
   final String postId;
+  final String? postAuthorUserId;
 
   @override
   ConsumerState<PostCommentsSheet> createState() => _PostCommentsSheetState();
@@ -29,13 +53,55 @@ class _PostCommentsSheetState extends ConsumerState<PostCommentsSheet> {
   final _newComment = TextEditingController();
   bool _sending = false;
   String? _actionError;
-  /// When non-null, the next Post is a reply to this comment.
   Comment? _replyingTo;
+
+  SupabaseClient? _rtClient;
+  RealtimeChannel? _rtChannel;
 
   @override
   void initState() {
     super.initState();
     _newComment.addListener(_clearErrorOnType);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _subscribeCommentsRealtime());
+  }
+
+  void _subscribeCommentsRealtime() {
+    if (!mounted) return;
+    final client = ref.read(supabaseClientProvider);
+    _rtClient = client;
+    final ch = client.channel('pulso_comments_${widget.postId}_$hashCode');
+    void onChange(PostgresChangePayload payload) {
+      if (!mounted) return;
+      final newRow = payload.newRecord;
+      final oldRow = payload.oldRecord;
+      final postIdRaw = newRow['post_id'] ?? oldRow['post_id'];
+      if (postIdRaw == null) return;
+      final postId = postIdRaw.toString();
+      if (postId != widget.postId) return;
+      ref.invalidate(commentsForPostProvider(widget.postId));
+    }
+
+    ch
+      ..onPostgresChanges(
+        event: PostgresChangeEvent.insert,
+        schema: 'public',
+        table: 'comments',
+        callback: onChange,
+      )
+      ..onPostgresChanges(
+        event: PostgresChangeEvent.update,
+        schema: 'public',
+        table: 'comments',
+        callback: onChange,
+      )
+      ..onPostgresChanges(
+        event: PostgresChangeEvent.delete,
+        schema: 'public',
+        table: 'comments',
+        callback: onChange,
+      )
+      ..subscribe();
+    _rtChannel = ch;
   }
 
   void _clearErrorOnType() {
@@ -46,6 +112,11 @@ class _PostCommentsSheetState extends ConsumerState<PostCommentsSheet> {
 
   @override
   void dispose() {
+    final ch = _rtChannel;
+    final cl = _rtClient;
+    if (ch != null && cl != null) {
+      cl.removeChannel(ch);
+    }
     _newComment.removeListener(_clearErrorOnType);
     _newComment.dispose();
     super.dispose();
@@ -180,6 +251,24 @@ class _PostCommentsSheetState extends ConsumerState<PostCommentsSheet> {
     }
   }
 
+  Future<void> _toggleCommentLike(Comment c) async {
+    try {
+      final repo = ref.read(postRepositoryProvider);
+      if (c.likedByMe) {
+        await repo.unlikeComment(c.id);
+      } else {
+        await repo.likeComment(c.id);
+      }
+      ref.invalidate(commentsForPostProvider(widget.postId));
+      await ref.read(commentsForPostProvider(widget.postId).future);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not update like: $e')),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -187,6 +276,9 @@ class _PostCommentsSheetState extends ConsumerState<PostCommentsSheet> {
     final bottomInset = MediaQuery.viewInsetsOf(context).bottom;
     final commentsAsync = ref.watch(commentsForPostProvider(widget.postId));
     final me = ref.watch(currentUserIdProvider);
+    final postOwnerId = widget.postAuthorUserId;
+    final canModerateComments =
+        me != null && postOwnerId != null && me == postOwnerId;
 
     return Scaffold(
       resizeToAvoidBottomInset: true,
@@ -235,7 +327,7 @@ class _PostCommentsSheetState extends ConsumerState<PostCommentsSheet> {
                     }
                     final byId = {for (final x in list) x.id: x};
                     return ListView.separated(
-                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
                       itemCount: list.length,
                       separatorBuilder: (_, __) => const Divider(height: 1),
                       itemBuilder: (ctx, i) {
@@ -246,83 +338,147 @@ class _PostCommentsSheetState extends ConsumerState<PostCommentsSheet> {
                             : null;
                         return Padding(
                           padding: EdgeInsets.only(
-                            left: c.isReply ? 16 : 0,
+                            left: c.isReply ? 12 : 0,
                             right: 4,
                             top: 8,
                             bottom: 8,
                           ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Row(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Expanded(
-                                    child: Text(
-                                      c.username,
-                                      style: theme.textTheme.titleSmall
-                                          ?.copyWith(
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                                  ),
-                                  TextButton(
-                                    style: TextButton.styleFrom(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 8,
-                                      ),
-                                      minimumSize: Size.zero,
-                                      tapTargetSize:
-                                          MaterialTapTargetSize.shrinkWrap,
-                                    ),
-                                    onPressed: () {
-                                      setState(() {
-                                        _replyingTo = c;
-                                        _actionError = null;
-                                      });
-                                    },
-                                    child: const Text('Reply'),
-                                  ),
-                                  if (mine)
-                                    PopupMenuButton<String>(
-                                      icon: const Icon(Icons.more_horiz, size: 20),
-                                      onSelected: (v) {
-                                        if (v == 'edit') {
-                                          _editComment(c);
-                                        } else if (v == 'delete') {
-                                          _deleteComment(c);
-                                        }
-                                      },
-                                      itemBuilder: (_) => const [
-                                        PopupMenuItem(
-                                          value: 'edit',
-                                          child: Text('Edit'),
+                              CommentAuthorAvatar(
+                                comment: c,
+                                size: 40,
+                                onTap: () =>
+                                    context.push('/users/${c.userId}'),
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                                  children: [
+                                    Row(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Expanded(
+                                          child: Wrap(
+                                            crossAxisAlignment:
+                                                WrapCrossAlignment.center,
+                                            spacing: 8,
+                                            children: [
+                                              Text(
+                                                c.username,
+                                                style: theme.textTheme.titleSmall
+                                                    ?.copyWith(
+                                                  fontWeight: FontWeight.w600,
+                                                ),
+                                              ),
+                                              Text(
+                                                _formatCommentTime(c.createdAt),
+                                                style: theme.textTheme.labelMedium
+                                                    ?.copyWith(
+                                                  color: scheme.onSurfaceVariant,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
                                         ),
-                                        PopupMenuItem(
-                                          value: 'delete',
-                                          child: Text('Delete'),
+                                        TextButton(
+                                          style: TextButton.styleFrom(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 6,
+                                            ),
+                                            minimumSize: Size.zero,
+                                            tapTargetSize:
+                                                MaterialTapTargetSize.shrinkWrap,
+                                          ),
+                                          onPressed: () {
+                                            setState(() {
+                                              _replyingTo = c;
+                                              _actionError = null;
+                                            });
+                                          },
+                                          child: const Text('Reply'),
+                                        ),
+                                        if (mine)
+                                          PopupMenuButton<String>(
+                                            icon: const Icon(Icons.more_horiz,
+                                                size: 20),
+                                            onSelected: (v) {
+                                              if (v == 'edit') {
+                                                _editComment(c);
+                                              } else if (v == 'delete') {
+                                                _deleteComment(c);
+                                              }
+                                            },
+                                            itemBuilder: (_) => const [
+                                              PopupMenuItem(
+                                                value: 'edit',
+                                                child: Text('Edit'),
+                                              ),
+                                              PopupMenuItem(
+                                                value: 'delete',
+                                                child: Text('Delete'),
+                                              ),
+                                            ],
+                                          ),
+                                        if (!mine && canModerateComments)
+                                          IconButton(
+                                            icon: const Icon(Icons.delete_outline,
+                                                size: 20),
+                                            tooltip: 'Delete comment',
+                                            onPressed: () => _deleteComment(c),
+                                          ),
+                                      ],
+                                    ),
+                                    if (replyToUser != null) ...[
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        'Replying to @$replyToUser',
+                                        style: theme.textTheme.labelMedium?.copyWith(
+                                          color: scheme.primary,
+                                          fontWeight: FontWeight.w500,
+                                        ),
+                                      ),
+                                    ],
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      c.body.trim().isEmpty ? '—' : c.body,
+                                      style: theme.textTheme.bodyMedium?.copyWith(
+                                        color: c.body.trim().isEmpty
+                                            ? scheme.onSurfaceVariant
+                                            : null,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Row(
+                                      children: [
+                                        IconButton(
+                                          onPressed: () => _toggleCommentLike(c),
+                                          icon: Icon(
+                                            c.likedByMe
+                                                ? Icons.favorite
+                                                : Icons.favorite_border,
+                                            size: 20,
+                                          ),
+                                          tooltip: c.likedByMe ? 'Unlike' : 'Like',
+                                          style: IconButton.styleFrom(
+                                            foregroundColor: c.likedByMe
+                                                ? scheme.error
+                                                : scheme.onSurfaceVariant,
+                                            padding: EdgeInsets.zero,
+                                            minimumSize: const Size(36, 36),
+                                          ),
+                                        ),
+                                        Text(
+                                          '${c.likeCount}',
+                                          style: theme.textTheme.labelMedium?.copyWith(
+                                            color: scheme.onSurfaceVariant,
+                                          ),
                                         ),
                                       ],
                                     ),
-                                ],
-                              ),
-                              if (replyToUser != null) ...[
-                                const SizedBox(height: 4),
-                                Text(
-                                  'Replying to @$replyToUser',
-                                  style: theme.textTheme.labelMedium?.copyWith(
-                                    color: scheme.primary,
-                                    fontWeight: FontWeight.w500,
-                                  ),
-                                ),
-                              ],
-                              const SizedBox(height: 4),
-                              Text(
-                                c.body.trim().isEmpty ? '—' : c.body,
-                                style: theme.textTheme.bodyMedium?.copyWith(
-                                  color: c.body.trim().isEmpty
-                                      ? scheme.onSurfaceVariant
-                                      : null,
+                                  ],
                                 ),
                               ),
                             ],
@@ -332,7 +488,7 @@ class _PostCommentsSheetState extends ConsumerState<PostCommentsSheet> {
                     );
                   },
                 ),
-                ),
+              ),
               if (_replyingTo != null)
                 Padding(
                   padding: const EdgeInsets.fromLTRB(12, 0, 12, 4),

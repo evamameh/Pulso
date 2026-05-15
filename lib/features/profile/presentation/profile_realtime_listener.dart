@@ -25,6 +25,7 @@ class ProfileRealtimeListener extends ConsumerStatefulWidget {
 class _ProfileRealtimeListenerState
     extends ConsumerState<ProfileRealtimeListener> {
   RealtimeChannel? _channel;
+  SupabaseClient? _supabase;
 
   @override
   void initState() {
@@ -43,8 +44,9 @@ class _ProfileRealtimeListenerState
 
   void _detach() {
     final ch = _channel;
-    if (ch != null) {
-      ref.read(supabaseClientProvider).removeChannel(ch);
+    final client = _supabase;
+    if (ch != null && client != null) {
+      client.removeChannel(ch);
       _channel = null;
     }
   }
@@ -53,6 +55,7 @@ class _ProfileRealtimeListenerState
     if (widget.profileUserId.isEmpty) return;
     _detach();
     final client = ref.read(supabaseClientProvider);
+    _supabase = client;
     final id = widget.profileUserId;
     final channel = client.channel('profile_row_$id');
     channel.onPostgresChanges(
@@ -61,7 +64,8 @@ class _ProfileRealtimeListenerState
       table: 'profiles',
       callback: (payload) {
         final row = payload.newRecord;
-        if (row == null) return;
+        if (row.isEmpty) return;
+        if (!mounted) return;
         final rid = row['id'] as String?;
         if (rid != id) return;
         ref.invalidate(profileByIdProvider(id));

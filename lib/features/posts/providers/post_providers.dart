@@ -24,7 +24,6 @@ final userPostsProvider = FutureProvider.family<List<Post>, String>(
       ref.watch(postRepositoryProvider).fetchPostsByUser(userId),
 );
 
-<<<<<<< HEAD
 /// IDs of posts the signed-in user saved (private). Empty set when logged out.
 final savedPostIdSetProvider = FutureProvider<Set<String>>((ref) async {
   ref.watch(currentUserIdProvider);
@@ -49,11 +48,6 @@ final postByIdProvider =
   ref.watch(currentUserIdProvider);
   return ref.watch(postRepositoryProvider).fetchPostById(postId);
 });
-=======
-final postCommentsProvider = FutureProvider.family<List<Comment>, String>(
-  (ref, postId) => ref.watch(postRepositoryProvider).fetchComments(postId),
-);
->>>>>>> ff4f7255b6d33b887cf872c885026593f490edfe
 
 final postFeedProvider =
     AutoDisposeAsyncNotifierProvider<PostFeedNotifier, List<Post>>(
@@ -104,7 +98,7 @@ class PostFeedNotifier extends AutoDisposeAsyncNotifier<List<Post>> {
         table: 'likes',
         callback: (payload) {
           final newRow = payload.newRecord;
-          if (newRow == null) return;
+          if (newRow.isEmpty) return;
           final postId = newRow['post_id'] as String?;
           final likerId = newRow['user_id'] as String?;
           if (postId == null || likerId == null) return;
@@ -119,7 +113,7 @@ class PostFeedNotifier extends AutoDisposeAsyncNotifier<List<Post>> {
         table: 'likes',
         callback: (payload) {
           final oldRow = payload.oldRecord;
-          if (oldRow == null) return;
+          if (oldRow.isEmpty) return;
           final postId = oldRow['post_id'] as String?;
           final likerId = oldRow['user_id'] as String?;
           if (postId == null || likerId == null) return;
@@ -140,7 +134,7 @@ class PostFeedNotifier extends AutoDisposeAsyncNotifier<List<Post>> {
         table: 'comments',
         callback: (payload) {
           final newRow = payload.newRecord;
-          if (newRow == null) return;
+          if (newRow.isEmpty) return;
           final postId = newRow['post_id'] as String?;
           if (postId == null) return;
           bumpCommentCount(postId, 1);
@@ -152,7 +146,7 @@ class PostFeedNotifier extends AutoDisposeAsyncNotifier<List<Post>> {
         table: 'comments',
         callback: (payload) {
           final oldRow = payload.oldRecord;
-          if (oldRow == null) return;
+          if (oldRow.isEmpty) return;
           final postId = oldRow['post_id'] as String?;
           if (postId == null) return;
           bumpCommentCount(postId, -1);

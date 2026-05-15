@@ -150,6 +150,13 @@ class _ProfileBodyState extends ConsumerState<_ProfileBody> {
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
+        Text(
+          'Edit your username, bio, and profile photo. Your avatar is uploaded to Supabase Storage; the public URL is stored on your profile.',
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+        ),
+        const SizedBox(height: 16),
         Center(
           child: Stack(
             alignment: Alignment.bottomRight,

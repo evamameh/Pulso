@@ -35,6 +35,50 @@ String _formatCommentTime(DateTime createdAt) {
   return 'now';
 }
 
+class _IndentedComment {
+  const _IndentedComment({required this.comment, required this.depth});
+
+  final Comment comment;
+  final int depth;
+}
+
+List<_IndentedComment> _flattenCommentsWithDepth(List<Comment> comments) {
+  final byId = {for (final c in comments) c.id: c};
+  final children = <String, List<Comment>>{};
+  for (final comment in comments) {
+    final parentId = comment.parentId;
+    if (parentId != null && byId.containsKey(parentId)) {
+      children.putIfAbsent(parentId, () => []).add(comment);
+    }
+  }
+
+  for (final list in children.values) {
+    list.sort((a, b) => a.createdAt.compareTo(b.createdAt));
+  }
+
+  final roots = comments
+      .where((c) => c.parentId == null || !byId.containsKey(c.parentId))
+      .toList()
+    ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
+
+  final flattened = <_IndentedComment>[];
+  void addComment(Comment comment, int depth) {
+    flattened.add(_IndentedComment(comment: comment, depth: depth));
+    final replies = children[comment.id];
+    if (replies != null) {
+      for (final reply in replies) {
+        addComment(reply, depth + 1);
+      }
+    }
+  }
+
+  for (final root in roots) {
+    addComment(root, 0);
+  }
+
+  return flattened;
+}
+
 class PostCommentsSheet extends ConsumerStatefulWidget {
   const PostCommentsSheet({
     super.key,
@@ -285,7 +329,7 @@ class _PostCommentsSheetState extends ConsumerState<PostCommentsSheet> {
       body: Padding(
         padding: EdgeInsets.only(bottom: bottomInset),
         child: SizedBox(
-          height: MediaQuery.sizeOf(context).height * 0.58,
+          height: MediaQuery.sizeOf(context).height * 0.85,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
@@ -326,19 +370,22 @@ class _PostCommentsSheetState extends ConsumerState<PostCommentsSheet> {
                       );
                     }
                     final byId = {for (final x in list) x.id: x};
+                    final orderedComments = _flattenCommentsWithDepth(list);
                     return ListView.separated(
                       padding: const EdgeInsets.symmetric(horizontal: 8),
-                      itemCount: list.length,
+                      itemCount: orderedComments.length,
                       separatorBuilder: (_, __) => const Divider(height: 1),
                       itemBuilder: (ctx, i) {
-                        final c = list[i];
+                        final item = orderedComments[i];
+                        final c = item.comment;
+                        final depth = item.depth;
                         final mine = me != null && me == c.userId;
                         final replyToUser = c.parentId != null
                             ? byId[c.parentId]?.username
                             : null;
                         return Padding(
                           padding: EdgeInsets.only(
-                            left: c.isReply ? 12 : 0,
+                            left: depth * 12,
                             right: 4,
                             top: 8,
                             bottom: 8,
